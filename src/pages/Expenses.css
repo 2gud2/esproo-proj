@@ -1,0 +1,21 @@
+.expenses-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.expense-form-card { position: sticky; top: calc(var(--topbar-height) + 24px); }
+.expense-history-card { min-height: 400px; }
+
+.expense-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .expenses-layout { grid-template-columns: 1fr; }
+  .expense-form-card { position: static; }
+}

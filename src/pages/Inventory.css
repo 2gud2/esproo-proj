@@ -1,0 +1,17 @@
+/* Inventory uses global .card, .table, .badge, .modal styles */
+/* Reuse .cat-chip from POS.css */
+.cat-chip {
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font-family: var(--font);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.cat-chip:hover { border-color: var(--primary); color: var(--primary); }
+.cat-chip.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }

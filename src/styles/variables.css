@@ -1,0 +1,57 @@
+/* ─── Espro Design System Variables ─── */
+:root {
+  /* Colors */
+  --primary: #943A1F;
+  --primary-dark: #7A2F18;
+  --primary-light: #B84C2A;
+  --primary-muted: rgba(148, 58, 31, 0.12);
+  --secondary: #18191A;
+  --secondary-light: #2A2B2D;
+  --secondary-muted: #3D3E40;
+
+  --bg: #F4F4F2;
+  --surface: #FFFFFF;
+  --surface-2: #F9F9F8;
+  --border: #E8E8E6;
+  --border-light: #F0F0EE;
+
+  --text-primary: #18191A;
+  --text-secondary: #6B6B6B;
+  --text-muted: #9E9E9E;
+  --text-inverse: #FFFFFF;
+
+  --success: #2E7D32;
+  --success-bg: #E8F5E9;
+  --warning: #E65100;
+  --warning-bg: #FFF3E0;
+  --danger: #C62828;
+  --danger-bg: #FFEBEE;
+  --info: #1565C0;
+  --info-bg: #E3F2FD;
+
+  /* Sidebar */
+  --sidebar-width: 240px;
+  --sidebar-collapsed: 0px;
+  --topbar-height: 64px;
+
+  /* Typography */
+  --font: 'Hanken Grotesk', 'Inter', system-ui, sans-serif;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.10);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.14);
+  --shadow-xl: 0 16px 48px rgba(0,0,0,0.18);
+
+  /* Border radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+}
