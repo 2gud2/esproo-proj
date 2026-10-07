@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { MOCK_PRODUCTS, MOCK_SALES } from './mockData';
 import type { Product, Sale, Ingredient, MenuItem, MenuItemIngredient, MenuCartItem, Expense } from './mockData';
 
 // ════════════════════════════════════════════════════════════

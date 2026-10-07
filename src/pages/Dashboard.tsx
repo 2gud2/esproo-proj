@@ -60,7 +60,7 @@ export default function DashboardPage() {
     return todaySales.reduce((sum, s) => sum + s.total, 0);
   }, [todaySales]);
 
-  const totalStockQuantity = useMemo(() => {
+  const _totalStockQuantity = useMemo(() => {
     return ingredients.reduce((sum, i) => sum + i.stock_quantity, 0);
   }, [ingredients]);
 
