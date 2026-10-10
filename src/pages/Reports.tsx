@@ -2,8 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Download, BarChart3, DollarSign, Package, Receipt,
-  X, RotateCcw, Inbox, UtensilsCrossed, TrendingUp, TrendingDown,
-  Layers, CheckCircle2
+  X, RotateCcw, Inbox, UtensilsCrossed
 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import Sidebar from '../components/Layout/Sidebar';
@@ -21,6 +20,7 @@ import {
   refundSaleNoRestoration
 } from '../lib/db';
 import { calculateIngredientCost } from '../lib/unitConversion';
+import { startOfDayLocal, endOfDayLocal } from '../lib/dateUtils';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import './Reports.css';
@@ -29,6 +29,18 @@ type Tab = 'sales' | 'expenses' | 'profit' | 'inventory';
 
 const PAGE_SIZE = 20;
 
+function formatCsvCell(val: any): string {
+  if (val == null) return '""';
+  let str = String(val);
+  // Prefix formula trigger characters to prevent CSV injection
+  if (/^[=+\-@]/.test(str)) {
+    str = "'" + str;
+  }
+  // Escape double quotes by doubling
+  const escaped = str.replace(/"/g, '""');
+  return `"${escaped}"`;
+}
+
 export default function ReportsPage() {
   const { user, loading: authLoading } = useAuth();
 
@@ -36,11 +48,12 @@ export default function ReportsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'voided' | 'refunded'>('all');
+  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'dine_in' | 'takeout'>('all');
 
   // Pagination states
   const [salesPage, setSalesPage] = useState(1);
   const [inventoryPage, setInventoryPage] = useState(1);
-  
+
   // State for reports data
   const [sales, setSales] = useState<Sale[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -70,10 +83,10 @@ export default function ReportsPage() {
       setExpenses(expensesData);
       setMenuItems(menuItemsData);
 
-      // Fetch recipes for all menu items to calculate accurate COGS
+      // Fetch recipes for all menu items to calculate accurate fallback COGS
       const recipeMap: Record<string, MenuItemIngredient[]> = {};
       await Promise.all(
-        menuItemsData.map(async m => {
+        menuItemsData.map(async (m) => {
           const rec = await loadMenuItemRecipe(m.id);
           recipeMap[m.id] = rec;
         })
@@ -91,31 +104,35 @@ export default function ReportsPage() {
   }, []);
 
   // Reset page when filters change
-  useEffect(() => { setSalesPage(1); }, [dateFrom, dateTo, statusFilter, tab]);
-  useEffect(() => { setInventoryPage(1); }, [tab]);
+  useEffect(() => {
+    setSalesPage(1);
+  }, [dateFrom, dateTo, statusFilter, orderTypeFilter, tab]);
 
-  // Block employee accounts from viewing admin financial reports
-  if (!authLoading && user && user.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
-  }
+  useEffect(() => {
+    setInventoryPage(1);
+  }, [tab]);
 
-  // Filtered sales based on date range and status filter
+  // Filtered sales based on local date range, status filter, and order type filter
   const filteredSales = useMemo(() => {
-    return sales.filter(s => {
+    return sales.filter((s) => {
       const d = new Date(s.createdAt);
-      const matchFrom = !dateFrom || d >= new Date(dateFrom);
-      const matchTo = !dateTo || d <= new Date(dateTo + 'T23:59:59');
+      const matchFrom = !dateFrom || d >= startOfDayLocal(dateFrom);
+      const matchTo = !dateTo || d <= endOfDayLocal(dateTo);
       const matchStatus = statusFilter === 'all' || s.status === statusFilter;
-      return matchFrom && matchTo && matchStatus;
+      const matchOrderType =
+        orderTypeFilter === 'all' ||
+        s.orderType === orderTypeFilter ||
+        (orderTypeFilter === 'dine_in' && !s.orderType);
+      return matchFrom && matchTo && matchStatus && matchOrderType;
     });
-  }, [sales, dateFrom, dateTo, statusFilter]);
+  }, [sales, dateFrom, dateTo, statusFilter, orderTypeFilter]);
 
-  // Filtered expenses based on date range
+  // Filtered expenses based on local date range
   const filteredExpenses = useMemo(() => {
-    return expenses.filter(e => {
+    return expenses.filter((e) => {
       const d = new Date(e.date);
-      const matchFrom = !dateFrom || d >= new Date(dateFrom);
-      const matchTo = !dateTo || d <= new Date(dateTo + 'T23:59:59');
+      const matchFrom = !dateFrom || d >= startOfDayLocal(dateFrom);
+      const matchTo = !dateTo || d <= endOfDayLocal(dateTo);
       return matchFrom && matchTo;
     });
   }, [expenses, dateFrom, dateTo]);
@@ -141,13 +158,18 @@ export default function ReportsPage() {
   // 1. SALES METRICS CALCULATIONS
   // ════════════════════════════════════════════════════════════
   const completedSalesInPeriod = useMemo(() => {
-    return filteredSales.filter(s => s.status === 'completed');
+    return filteredSales.filter((s) => s.status === 'completed');
+  }, [filteredSales]);
+
+  const refundedSalesInPeriod = useMemo(() => {
+    return filteredSales.filter((s) => s.status === 'refunded');
   }, [filteredSales]);
 
   // Gross Sales = Sum of (Subtotal or Total + Discount) for completed sales
   const grossSales = useMemo(() => {
     return completedSalesInPeriod.reduce((sum, s) => {
-      const subtotal = s.subtotal != null ? Number(s.subtotal) : (Number(s.total) + Number(s.discount || 0));
+      const subtotal =
+        s.subtotal != null ? Number(s.subtotal) : Number(s.total) + Number(s.discount || 0);
       return sum + subtotal;
     }, 0);
   }, [completedSalesInPeriod]);
@@ -161,58 +183,126 @@ export default function ReportsPage() {
   const netSales = grossSales - totalDiscounts;
 
   // ════════════════════════════════════════════════════════════
-  // 2. COGS (COST OF GOODS SOLD) PER PRODUCT
+  // 2. COGS (COST OF GOODS SOLD) PER PRODUCT + PACKAGING + REFUND WASTAGE
   // ════════════════════════════════════════════════════════════
-  const cogsBreakdown = useMemo(() => {
-    // Map of product/menu_item_id -> total qty sold in period
-    const qtySoldMap: Record<string, { name: string; qtySold: number; cogsPerServing: number; totalCogs: number }> = {};
-
-    // Calculate serving COGS for each menu item from its recipe
-    const itemCogsMap: Record<string, number> = {};
-    menuItems.forEach(item => {
+  const fallbackRecipeCogsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    menuItems.forEach((item) => {
       const recipe = recipesByMenuId[item.id] || [];
       const servingCost = recipe.reduce((acc, r) => {
-        const ing = ingredients.find(i => i.id === r.ingredient_id) || r.ingredient;
-        const lineCost = calculateIngredientCost(Number(r.quantity_used) || 0, r.unit || ing?.unit || 'pcs', ing);
+        const ing = ingredients.find((i) => i.id === r.ingredient_id) || r.ingredient;
+        const lineCost = calculateIngredientCost(
+          Number(r.quantity_used) || 0,
+          r.unit || ing?.unit || 'pcs',
+          ing
+        );
         return acc + lineCost;
       }, 0);
-      itemCogsMap[item.id] = servingCost;
+      map[item.id] = servingCost;
     });
+    return map;
+  }, [menuItems, recipesByMenuId, ingredients]);
 
-    // Aggregate quantities from completed sales
-    completedSalesInPeriod.forEach(sale => {
+  // Breakdown of completed sales COGS split into Ingredients vs Packaging & Supplies
+  const cogsBreakdown = useMemo(() => {
+    const qtySoldMap: Record<
+      string,
+      {
+        id: string;
+        name: string;
+        qtySold: number;
+        ingredientsCogs: number;
+        suppliesCogs: number;
+        totalCogs: number;
+      }
+    > = {};
+
+    completedSalesInPeriod.forEach((sale) => {
       (sale.items || []).forEach((item: any) => {
-        const id = item.menu_item_id || item.product?.id || item.id;
+        const id = item.menu_item_id || item.product?.id || item.id || item.name;
         const name = item.name || item.product?.name || 'Unknown Item';
         const qty = Number(item.qty || 1);
-        const cogsPerServing = itemCogsMap[id] || 0;
+
+        // Snapshot ingredient cost; fallback to current recipe calculation
+        const cogsIngPerServing =
+          item.cogs_per_serving != null
+            ? Number(item.cogs_per_serving)
+            : fallbackRecipeCogsMap[id] || 0;
+
+        // Snapshot supplies cost (per serving)
+        const cogsSuppliesPerServing =
+          item.cogs_supplies_per_serving != null ? Number(item.cogs_supplies_per_serving) : 0;
 
         if (!qtySoldMap[id]) {
           qtySoldMap[id] = {
+            id,
             name,
             qtySold: 0,
-            cogsPerServing,
+            ingredientsCogs: 0,
+            suppliesCogs: 0,
             totalCogs: 0,
           };
         }
+
         qtySoldMap[id].qtySold += qty;
-        qtySoldMap[id].totalCogs = qtySoldMap[id].qtySold * cogsPerServing;
+        qtySoldMap[id].ingredientsCogs += qty * cogsIngPerServing;
+        qtySoldMap[id].suppliesCogs += qty * cogsSuppliesPerServing;
+        qtySoldMap[id].totalCogs += qty * (cogsIngPerServing + cogsSuppliesPerServing);
       });
     });
 
-    return Object.values(qtySoldMap).filter(p => p.qtySold > 0);
-  }, [completedSalesInPeriod, menuItems, recipesByMenuId, ingredients]);
+    return Object.values(qtySoldMap).filter((p) => p.qtySold > 0);
+  }, [completedSalesInPeriod, fallbackRecipeCogsMap]);
 
-  const totalCogs = useMemo(() => {
-    return cogsBreakdown.reduce((sum, item) => sum + item.totalCogs, 0);
+  // Order-level takeout packaging COGS
+  const orderPackagingCogs = useMemo(() => {
+    return completedSalesInPeriod.reduce((sum, sale) => {
+      return sum + Number(sale.orderSuppliesCogs || 0);
+    }, 0);
+  }, [completedSalesInPeriod]);
+
+  // Subtotals for line items
+  const totalLineIngredientsCogs = useMemo(() => {
+    return cogsBreakdown.reduce((sum, item) => sum + item.ingredientsCogs, 0);
   }, [cogsBreakdown]);
+
+  const totalLineSuppliesCogs = useMemo(() => {
+    return cogsBreakdown.reduce((sum, item) => sum + item.suppliesCogs, 0);
+  }, [cogsBreakdown]);
+
+  const totalLineCogs = useMemo(() => {
+    return totalLineIngredientsCogs + totalLineSuppliesCogs;
+  }, [totalLineIngredientsCogs, totalLineSuppliesCogs]);
+
+  // COGS of refunded sales (ingredients & supplies consumed as wastage)
+  const refundedCogsWastage = useMemo(() => {
+    let sum = 0;
+    refundedSalesInPeriod.forEach((sale) => {
+      (sale.items || []).forEach((item: any) => {
+        const id = item.menu_item_id || item.product?.id || item.id;
+        const qty = Number(item.qty || 1);
+        const ingCost =
+          item.cogs_per_serving != null
+            ? Number(item.cogs_per_serving)
+            : fallbackRecipeCogsMap[id] || 0;
+        const suppCost =
+          item.cogs_supplies_per_serving != null ? Number(item.cogs_supplies_per_serving) : 0;
+        sum += qty * (ingCost + suppCost);
+      });
+      sum += Number(sale.orderSuppliesCogs || 0);
+    });
+    return sum;
+  }, [refundedSalesInPeriod, fallbackRecipeCogsMap]);
+
+  const completedCogs = totalLineCogs + orderPackagingCogs;
+  const totalCogs = completedCogs + refundedCogsWastage;
 
   // ════════════════════════════════════════════════════════════
   // 3. OPERATING EXPENSES BY CATEGORY
   // ════════════════════════════════════════════════════════════
   const operatingExpensesByCategory = useMemo(() => {
     const map: Record<string, number> = {};
-    filteredExpenses.forEach(e => {
+    filteredExpenses.forEach((e) => {
       map[e.category] = (map[e.category] || 0) + Number(e.amount || 0);
     });
     return Object.entries(map).map(([category, amount]) => ({
@@ -238,25 +328,42 @@ export default function ReportsPage() {
   // Number formatting helper
   function formatAccountingNumber(val: number, isDeduction = false, withPeso = false): string {
     const absVal = Math.abs(val);
-    const formatted = absVal.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const formatted = absVal.toLocaleString('en-PH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
     if (isDeduction) {
       return withPeso ? `(₱${formatted})` : `(${formatted})`;
     }
     return withPeso ? `₱${formatted}` : formatted;
   }
 
-  // CSV Export for Sales Report
+  // CSV Export for Sales Report using Blob with UTF-8 BOM
   function handleExportCSV() {
     if (filteredSales.length === 0) {
       toast.error('No sales data to export for selected filter');
       return;
     }
 
-    const headers = ['Sale ID', 'Date', 'Cashier', 'No. of Items', 'Subtotal (PHP)', 'Discount (PHP)', 'Refund (PHP)', 'Total (PHP)', 'Payment Method', 'Status', 'Reason'];
-    const rows = filteredSales.map(s => [
+    const headers = [
+      'Sale ID',
+      'Date',
+      'Order Type',
+      'Cashier',
+      'No. of Items',
+      'Subtotal (PHP)',
+      'Discount (PHP)',
+      'Refund (PHP)',
+      'Total (PHP)',
+      'Payment Method',
+      'Status',
+      'Reason',
+    ];
+    const rows = filteredSales.map((s) => [
       s.id,
       format(new Date(s.createdAt), 'yyyy-MM-dd HH:mm'),
-      `"${s.cashierName}"`,
+      s.orderType === 'takeout' ? 'Takeout' : 'Dine-in',
+      s.cashierName,
       getItemCount(s.items),
       s.subtotal != null ? s.subtotal : s.total,
       s.discount || 0,
@@ -264,17 +371,24 @@ export default function ReportsPage() {
       s.total,
       s.paymentMethod === 'cash' ? 'Cash' : 'Digital Payment',
       s.status,
-      `"${s.voidReason || ''}"`
+      s.voidReason || '',
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvLines = [
+      headers.map(formatCsvCell).join(','),
+      ...rows.map((r) => r.map(formatCsvCell).join(',')),
+    ];
+    const csvString = csvLines.join('\r\n');
+
+    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.href = url;
     link.setAttribute('download', `espro_sales_report_${format(new Date(), 'yyyy-MM-dd')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     toast.success('Sales report exported to CSV!');
   }
 
@@ -287,13 +401,25 @@ export default function ReportsPage() {
 
   async function handleConfirmVoid() {
     if (!selectedSaleId) return;
-    if (!voidReason.trim()) { toast.error('Please specify a reason'); return; }
-    
+    if (!voidReason.trim()) {
+      toast.error('Please specify a reason');
+      return;
+    }
+
     setSavingVoid(true);
     try {
       if (voidType === 'voided') {
-        await voidSaleWithRestoration(selectedSaleId, voidType, voidReason.trim());
-        toast.success('Sale voided successfully! Raw ingredient stock restored.');
+        const res = await voidSaleWithRestoration(selectedSaleId, voidType, voidReason.trim());
+        if (res?.restored) {
+          toast.success('Sale voided successfully! Raw ingredient stock restored.');
+        } else {
+          toast(
+            'Voided, but stock could not be restored automatically (legacy sale). Adjust inventory manually.',
+            {
+              icon: '⚠️',
+            }
+          );
+        }
       } else {
         await refundSaleNoRestoration(selectedSaleId, voidReason.trim());
         toast.success('Sale refunded successfully! Stock remains deducted.');
@@ -313,6 +439,13 @@ export default function ReportsPage() {
     { key: 'profit', label: 'Profit Summary', icon: DollarSign },
     { key: 'inventory', label: 'Raw Ingredients Report', icon: Package },
   ];
+
+  // ════════════════════════════════════════════════════════════
+  // CONDITIONAL RENDERING BELOW ALL HOOKS (Rules of Hooks)
+  // ════════════════════════════════════════════════════════════
+  if (!authLoading && user && user.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   if (authLoading || loadingData) {
     return (
@@ -345,32 +478,101 @@ export default function ReportsPage() {
         />
         <main className="page-body">
           {/* Date range & Filters */}
-          <div className="reports-filters card card-pad" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)', flexShrink: 0 }}>Date Range:</span>
-              <input type="date" className="input" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: 145, flexShrink: 0 }} />
+          <div
+            className="reports-filters card card-pad"
+            style={{
+              marginBottom: 20,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'nowrap',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: 'var(--text-secondary)',
+                  flexShrink: 0,
+                }}
+              >
+                Date Range:
+              </span>
+              <input
+                type="date"
+                className="input"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                style={{ width: 145, flexShrink: 0 }}
+              />
               <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>to</span>
-              <input type="date" className="input" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: 145, flexShrink: 0 }} />
+              <input
+                type="date"
+                className="input"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                style={{ width: 145, flexShrink: 0 }}
+              />
               {(dateFrom || dateTo) && (
-                <button className="btn btn-ghost btn-sm" onClick={() => { setDateFrom(''); setDateTo(''); }} style={{ flexShrink: 0 }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setDateFrom('');
+                    setDateTo('');
+                  }}
+                  style={{ flexShrink: 0 }}
+                >
                   <X size={13} /> Clear Date
                 </button>
               )}
             </div>
 
             {tab === 'sales' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', flexShrink: 0 }}>
-                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Status:</span>
-                <div className="period-tabs">
-                  {(['all', 'completed', 'refunded', 'voided'] as const).map(st => (
-                    <button
-                      key={st}
-                      className={`period-tab${statusFilter === st ? ' active' : ''}`}
-                      onClick={() => setStatusFilter(st)}
-                    >
-                      {st.charAt(0).toUpperCase() + st.slice(1)}
-                    </button>
-                  ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                {/* Order Type Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', flexShrink: 0 }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Type:
+                  </span>
+                  <div className="period-tabs">
+                    {(['all', 'dine_in', 'takeout'] as const).map((ot) => (
+                      <button
+                        key={ot}
+                        className={`period-tab${orderTypeFilter === ot ? ' active' : ''}`}
+                        onClick={() => setOrderTypeFilter(ot)}
+                      >
+                        {ot === 'all' ? 'All' : ot === 'dine_in' ? 'Dine-in' : 'Takeout'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Status Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', flexShrink: 0 }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Status:
+                  </span>
+                  <div className="period-tabs">
+                    {(['all', 'completed', 'refunded', 'voided'] as const).map((st) => (
+                      <button
+                        key={st}
+                        className={`period-tab${statusFilter === st ? ' active' : ''}`}
+                        onClick={() => setStatusFilter(st)}
+                      >
+                        {st.charAt(0).toUpperCase() + st.slice(1)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -378,30 +580,70 @@ export default function ReportsPage() {
 
           {/* Navigation Tabs */}
           <div className="reports-tabs">
-            {tabs.map(t => (
-              <button key={t.key} className={`reports-tab${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                className={`reports-tab${tab === t.key ? ' active' : ''}`}
+                onClick={() => setTab(t.key)}
+              >
                 <t.icon size={16} />
                 {t.label}
               </button>
             ))}
           </div>
 
-          <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-            
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+          >
             {/* ════════════════════════════════════════════════════════════
-                TAB 1: SALES REPORTS (Immediate Transactions Table, No Graph)
+                TAB 1: SALES REPORTS (Immediate Transactions Table)
                ════════════════════════════════════════════════════════════ */}
             {tab === 'sales' && (
               <div className="card">
-                <div className="card-pad" style={{ borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <div
+                  className="card-pad"
+                  style={{
+                    borderBottom: '1px solid var(--border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                  }}
+                >
                   <div>
-                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Sales Transactions ({filteredSales.length})</h3>
-                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Complete ledger of sales, discounts, refunds, and receipts</p>
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>
+                      Sales Transactions ({filteredSales.length})
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      Complete ledger of sales, discounts, refunds, and receipts
+                    </p>
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span className="badge badge-neutral">Gross Sales: ₱{grossSales.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-                    <span className="badge badge-success">Discounts: -₱{totalDiscounts.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-                    <span className="badge badge-primary" style={{ fontWeight: 700 }}>Net Sales: ₱{netSales.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                    <span className="badge badge-neutral">
+                      Gross Sales: ₱
+                      {grossSales.toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                    <span className="badge badge-success">
+                      Discounts: -₱
+                      {totalDiscounts.toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                    <span className="badge badge-primary" style={{ fontWeight: 700 }}>
+                      Net Sales: ₱
+                      {netSales.toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
                   </div>
                 </div>
 
@@ -417,6 +659,7 @@ export default function ReportsPage() {
                         <tr>
                           <th>Sale ID</th>
                           <th>Date</th>
+                          <th>Order Type</th>
                           <th>Cashier</th>
                           <th>No. of Items</th>
                           <th>Subtotal</th>
@@ -428,10 +671,11 @@ export default function ReportsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {paginatedSales.map(s => {
+                        {paginatedSales.map((s) => {
                           const itemCount = getItemCount(s.items);
                           const discountVal = Number(s.discount || 0);
-                          const subtotalVal = s.subtotal != null ? Number(s.subtotal) : (Number(s.total) + discountVal);
+                          const subtotalVal =
+                            s.subtotal != null ? Number(s.subtotal) : Number(s.total) + discountVal;
                           const refundVal = s.status === 'refunded' ? Number(s.total) : 0;
 
                           return (
@@ -444,22 +688,43 @@ export default function ReportsPage() {
                                 {format(new Date(s.createdAt), 'MMM dd, h:mm a')}
                               </td>
 
+                              {/* Order Type */}
+                              <td>
+                                <span
+                                  className={`badge ${
+                                    s.orderType === 'takeout' ? 'badge-warning' : 'badge-neutral'
+                                  }`}
+                                >
+                                  {s.orderType === 'takeout' ? 'Takeout' : 'Dine-in'}
+                                </span>
+                              </td>
+
                               {/* Cashier */}
                               <td>{s.cashierName}</td>
 
                               {/* No. of Items */}
-                              <td>{itemCount} item{itemCount === 1 ? '' : 's'}</td>
+                              <td>
+                                {itemCount} item{itemCount === 1 ? '' : 's'}
+                              </td>
 
                               {/* Subtotal */}
                               <td style={{ fontWeight: 500 }}>
-                                ₱{subtotalVal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                ₱
+                                {subtotalVal.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </td>
 
                               {/* Discount */}
                               <td>
                                 {discountVal > 0 ? (
                                   <span style={{ color: 'var(--danger)', fontWeight: 600 }}>
-                                    ₱{discountVal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                    ₱
+                                    {discountVal.toLocaleString('en-PH', {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}
                                   </span>
                                 ) : (
                                   <span style={{ color: 'var(--text-muted)' }}>0</span>
@@ -470,7 +735,11 @@ export default function ReportsPage() {
                               <td>
                                 {refundVal > 0 ? (
                                   <span style={{ color: 'var(--danger)', fontWeight: 600 }}>
-                                    ₱{refundVal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                    ₱
+                                    {refundVal.toLocaleString('en-PH', {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}
                                   </span>
                                 ) : (
                                   <span style={{ color: 'var(--text-muted)' }}>0</span>
@@ -478,14 +747,39 @@ export default function ReportsPage() {
                               </td>
 
                               {/* Total */}
-                              <td style={{ fontWeight: 700, color: s.status === 'voided' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                                ₱{Number(s.total).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              <td
+                                style={{
+                                  fontWeight: 700,
+                                  color:
+                                    s.status === 'voided'
+                                      ? 'var(--text-muted)'
+                                      : 'var(--text-primary)',
+                                }}
+                              >
+                                ₱
+                                {Number(s.total).toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </td>
 
                               {/* Status */}
                               <td>
-                                <span className={`badge ${s.status === 'completed' ? 'badge-success' : s.status === 'voided' ? 'badge-danger' : 'badge-warning'}`}>
-                                  ● {s.status === 'completed' ? 'Completed' : s.status === 'voided' ? 'Voided' : 'Refunded'}
+                                <span
+                                  className={`badge ${
+                                    s.status === 'completed'
+                                      ? 'badge-success'
+                                      : s.status === 'voided'
+                                        ? 'badge-danger'
+                                        : 'badge-warning'
+                                  }`}
+                                >
+                                  ●{' '}
+                                  {s.status === 'completed'
+                                    ? 'Completed'
+                                    : s.status === 'voided'
+                                      ? 'Voided'
+                                      : 'Refunded'}
                                 </span>
                               </td>
 
@@ -494,13 +788,28 @@ export default function ReportsPage() {
                                 {s.status === 'completed' ? (
                                   <button
                                     className="btn btn-sm btn-ghost"
-                                    style={{ color: 'var(--danger)', padding: '3px 8px', fontSize: '0.72rem' }}
+                                    style={{
+                                      color: 'var(--danger)',
+                                      padding: '3px 8px',
+                                      fontSize: '0.72rem',
+                                    }}
                                     onClick={() => handleVoidClick(s.id)}
                                   >
                                     Void / Refund
                                   </button>
                                 ) : (
-                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'inline-block', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.voidReason}>
+                                  <span
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      color: 'var(--text-muted)',
+                                      display: 'inline-block',
+                                      maxWidth: 160,
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                    title={s.voidReason}
+                                  >
                                     {s.voidReason || 'No reason specified'}
                                   </span>
                                 )}
@@ -527,7 +836,6 @@ export default function ReportsPage() {
                ════════════════════════════════════════════════════════════ */}
             {tab === 'expenses' && (
               <div className="expense-sections-grid">
-                
                 {/* SECTION 1: COST OF GOODS SOLD (COGS) */}
                 <div className="card">
                   <div className="report-section-header">
@@ -536,7 +844,9 @@ export default function ReportsPage() {
                       SECTION 1: COST OF GOODS SOLD (COGS)
                     </h3>
                   </div>
-                  {cogsBreakdown.length === 0 ? (
+                  {cogsBreakdown.length === 0 &&
+                  orderPackagingCogs === 0 &&
+                  refundedCogsWastage === 0 ? (
                     <div className="empty-state" style={{ padding: '40px 20px' }}>
                       <p style={{ fontSize: '0.85rem' }}>No recipe items sold in selected period.</p>
                     </div>
@@ -547,27 +857,150 @@ export default function ReportsPage() {
                           <tr>
                             <th>Product</th>
                             <th style={{ textAlign: 'center' }}>Quantity Sold</th>
-                            <th style={{ textAlign: 'right' }}>COGS per Serving</th>
+                            <th style={{ textAlign: 'right' }}>Ingredients</th>
+                            <th style={{ textAlign: 'right' }}>Packaging &amp; Supplies</th>
                             <th style={{ textAlign: 'right' }}>Total COGS</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {cogsBreakdown.map((item, idx) => (
-                            <tr key={idx}>
+                          {cogsBreakdown.map((item) => (
+                            <tr key={item.id}>
                               <td style={{ fontWeight: 600 }}>{item.name}</td>
                               <td style={{ textAlign: 'center' }}>{item.qtySold}</td>
                               <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
-                                ₱{item.cogsPerServing.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                ₱
+                                {item.ingredientsCogs.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </td>
-                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
-                                ₱{item.totalCogs.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
+                                ₱
+                                {item.suppliesCogs.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td
+                                style={{
+                                  textAlign: 'right',
+                                  fontWeight: 600,
+                                  color: 'var(--danger)',
+                                }}
+                              >
+                                ₱
+                                {item.totalCogs.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </td>
                             </tr>
                           ))}
-                          <tr className="table-total-row">
-                            <td colSpan={3} style={{ fontWeight: 700 }}>Total COGS</td>
+
+                          {/* Line items subtotal */}
+                          <tr
+                            style={{
+                              background: 'var(--surface-2)',
+                              fontWeight: 600,
+                              borderTop: '1px solid var(--border)',
+                            }}
+                          >
+                            <td style={{ fontWeight: 700 }}>Line items subtotal</td>
+                            <td style={{ textAlign: 'center' }}>
+                              {cogsBreakdown.reduce((sum, i) => sum + i.qtySold, 0)}
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                              ₱
+                              {totalLineIngredientsCogs.toLocaleString('en-PH', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                              ₱
+                              {totalLineSuppliesCogs.toLocaleString('en-PH', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
                             <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
-                              ₱{totalCogs.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              ₱
+                              {totalLineCogs.toLocaleString('en-PH', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                          </tr>
+
+                          {/* Order packaging (takeout) */}
+                          <tr>
+                            <td style={{ fontWeight: 600 }}>Order packaging (takeout)</td>
+                            <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>—</td>
+                            <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>—</td>
+                            <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
+                              ₱
+                              {orderPackagingCogs.toLocaleString('en-PH', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td
+                              style={{
+                                textAlign: 'right',
+                                fontWeight: 600,
+                                color: 'var(--danger)',
+                              }}
+                            >
+                              ₱
+                              {orderPackagingCogs.toLocaleString('en-PH', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                          </tr>
+
+                          {/* Refunded orders (wastage) */}
+                          {refundedCogsWastage > 0 && (
+                            <tr>
+                              <td style={{ fontWeight: 600, color: 'var(--warning, #e67e22)' }}>
+                                Refunded orders (wastage)
+                              </td>
+                              <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>—</td>
+                              <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>—</td>
+                              <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>—</td>
+                              <td
+                                style={{
+                                  textAlign: 'right',
+                                  fontWeight: 600,
+                                  color: 'var(--danger)',
+                                }}
+                              >
+                                ₱
+                                {refundedCogsWastage.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+                            </tr>
+                          )}
+
+                          {/* Total COGS */}
+                          <tr className="table-total-row">
+                            <td colSpan={4} style={{ fontWeight: 700 }}>
+                              Total COGS
+                            </td>
+                            <td
+                              style={{
+                                textAlign: 'right',
+                                fontWeight: 700,
+                                color: 'var(--danger)',
+                              }}
+                            >
+                              ₱
+                              {totalCogs.toLocaleString('en-PH', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
                             </td>
                           </tr>
                         </tbody>
@@ -586,7 +1019,9 @@ export default function ReportsPage() {
                   </div>
                   {operatingExpensesByCategory.length === 0 ? (
                     <div className="empty-state" style={{ padding: '40px 20px' }}>
-                      <p style={{ fontSize: '0.85rem' }}>No operating expenses recorded for selected period.</p>
+                      <p style={{ fontSize: '0.85rem' }}>
+                        No operating expenses recorded for selected period.
+                      </p>
                     </div>
                   ) : (
                     <div className="table-wrap">
@@ -601,15 +1036,35 @@ export default function ReportsPage() {
                           {operatingExpensesByCategory.map((cat, idx) => (
                             <tr key={idx}>
                               <td style={{ fontWeight: 600 }}>{cat.category}</td>
-                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
-                                ₱{cat.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              <td
+                                style={{
+                                  textAlign: 'right',
+                                  fontWeight: 600,
+                                  color: 'var(--danger)',
+                                }}
+                              >
+                                ₱
+                                {cat.amount.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </td>
                             </tr>
                           ))}
                           <tr className="table-total-row">
                             <td style={{ fontWeight: 700 }}>Total Operating Expenses</td>
-                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
-                              ₱{totalOperatingExpenses.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                            <td
+                              style={{
+                                textAlign: 'right',
+                                fontWeight: 700,
+                                color: 'var(--danger)',
+                              }}
+                            >
+                              ₱
+                              {totalOperatingExpenses.toLocaleString('en-PH', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
                             </td>
                           </tr>
                         </tbody>
@@ -617,7 +1072,6 @@ export default function ReportsPage() {
                     </div>
                   )}
                 </div>
-
               </div>
             )}
 
@@ -628,12 +1082,17 @@ export default function ReportsPage() {
               <div className="income-statement-card">
                 <div className="income-statement-header">
                   <div>
-                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>PROFIT SUMMARY</h3>
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>
+                      PROFIT SUMMARY
+                    </h3>
                     <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                       Statement of Profit and Loss (Accounting Breakdown)
                     </p>
                   </div>
-                  <span className={`badge ${isNetProfitPositive ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.85rem', padding: '6px 12px' }}>
+                  <span
+                    className={`badge ${isNetProfitPositive ? 'badge-success' : 'badge-danger'}`}
+                    style={{ fontSize: '0.85rem', padding: '6px 12px' }}
+                  >
                     {isNetProfitPositive ? '● Profitable Period' : '● Operating at Loss'}
                   </span>
                 </div>
@@ -646,7 +1105,7 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* GROSS SALES (First line has ₱ sign, Green) */}
+                    {/* GROSS SALES */}
                     <tr>
                       <td className="income-statement-row-label">GROSS SALES</td>
                       <td className="income-statement-val val-positive">
@@ -654,7 +1113,7 @@ export default function ReportsPage() {
                       </td>
                     </tr>
 
-                    {/* LESS: DISCOUNT (Red, in parentheses, no ₱ sign) */}
+                    {/* LESS: DISCOUNT */}
                     <tr>
                       <td className="income-statement-row-label indent">LESS: DISCOUNT</td>
                       <td className="income-statement-val val-negative">
@@ -662,7 +1121,7 @@ export default function ReportsPage() {
                       </td>
                     </tr>
 
-                    {/* NET SALES (Subtotal, Green, no ₱ sign) */}
+                    {/* NET SALES */}
                     <tr className="income-statement-subtotal-row">
                       <td className="income-statement-row-label">NET SALES</td>
                       <td className="income-statement-val val-positive">
@@ -670,15 +1129,17 @@ export default function ReportsPage() {
                       </td>
                     </tr>
 
-                    {/* LESS: COST OF GOODS SOLD (Red, in parentheses, no ₱ sign) */}
+                    {/* LESS: COST OF GOODS SOLD */}
                     <tr>
-                      <td className="income-statement-row-label indent">LESS: COST OF GOODS SOLD</td>
+                      <td className="income-statement-row-label indent">
+                        LESS: COST OF GOODS SOLD
+                      </td>
                       <td className="income-statement-val val-negative">
                         {formatAccountingNumber(totalCogs, true, false)}
                       </td>
                     </tr>
 
-                    {/* GROSS PROFIT (Subtotal, Green, no ₱ sign) */}
+                    {/* GROSS PROFIT */}
                     <tr className="income-statement-subtotal-row">
                       <td className="income-statement-row-label">GROSS PROFIT</td>
                       <td className="income-statement-val val-positive">
@@ -686,20 +1147,30 @@ export default function ReportsPage() {
                       </td>
                     </tr>
 
-                    {/* LESS: OPERATING EXPENSES (Red, in parentheses, no ₱ sign) */}
+                    {/* LESS: OPERATING EXPENSES */}
                     <tr>
-                      <td className="income-statement-row-label indent">LESS: OPERATING EXPENSES</td>
+                      <td className="income-statement-row-label indent">
+                        LESS: OPERATING EXPENSES
+                      </td>
                       <td className="income-statement-val val-negative">
                         {formatAccountingNumber(totalOperatingExpenses, true, false)}
                       </td>
                     </tr>
 
-                    {/* FINAL ROW: NET PROFIT or NET LOSS (Has ₱ sign, double underline!) */}
+                    {/* FINAL ROW: NET PROFIT or NET LOSS */}
                     <tr className="income-statement-final-row">
-                      <td className="income-statement-row-label" style={{ fontSize: '1.05rem', fontWeight: 800 }}>
+                      <td
+                        className="income-statement-row-label"
+                        style={{ fontSize: '1.05rem', fontWeight: 800 }}
+                      >
                         {isNetProfitPositive ? 'NET PROFIT' : 'NET LOSS'}
                       </td>
-                      <td className={`income-statement-val ${isNetProfitPositive ? 'val-positive' : 'val-negative'}`} style={{ fontSize: '1.15rem', fontWeight: 800 }}>
+                      <td
+                        className={`income-statement-val ${
+                          isNetProfitPositive ? 'val-positive' : 'val-negative'
+                        }`}
+                        style={{ fontSize: '1.15rem', fontWeight: 800 }}
+                      >
                         <span className={`double-underline ${isNetProfitPositive ? '' : 'loss'}`}>
                           {isNetProfitPositive
                             ? formatAccountingNumber(netProfit, false, true)
@@ -718,7 +1189,9 @@ export default function ReportsPage() {
             {tab === 'inventory' && (
               <div className="card">
                 <div className="card-pad" style={{ borderBottom: '1px solid var(--border)' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Raw Ingredients Stock Levels</h3>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>
+                    Raw Ingredients Stock Levels
+                  </h3>
                 </div>
                 {ingredients.length === 0 ? (
                   <div className="empty-state" style={{ padding: '50px 20px' }}>
@@ -738,16 +1211,24 @@ export default function ReportsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {paginatedIngredients.map(ing => {
+                        {paginatedIngredients.map((ing) => {
                           const low = ing.stock_quantity <= ing.low_stock_threshold;
                           return (
                             <tr key={ing.id}>
                               <td style={{ fontWeight: 600 }}>{ing.name}</td>
-                              <td><span className="badge badge-neutral">{ing.unit}</span></td>
-                              <td style={{ fontWeight: 600 }}>{ing.stock_quantity} {ing.unit}</td>
-                              <td style={{ color: 'var(--text-muted)' }}>{ing.low_stock_threshold} {ing.unit}</td>
                               <td>
-                                <span className={`badge ${low ? 'badge-danger' : 'badge-success'}`}>
+                                <span className="badge badge-neutral">{ing.unit}</span>
+                              </td>
+                              <td style={{ fontWeight: 600 }}>
+                                {ing.stock_quantity} {ing.unit}
+                              </td>
+                              <td style={{ color: 'var(--text-muted)' }}>
+                                {ing.low_stock_threshold} {ing.unit}
+                              </td>
+                              <td>
+                                <span
+                                  className={`badge ${low ? 'badge-danger' : 'badge-success'}`}
+                                >
                                   ● {low ? 'Low Stock' : 'OK'}
                                 </span>
                               </td>
@@ -767,7 +1248,6 @@ export default function ReportsPage() {
                 />
               </div>
             )}
-
           </motion.div>
         </main>
       </div>
@@ -775,29 +1255,72 @@ export default function ReportsPage() {
       {/* Void Modal */}
       <AnimatePresence>
         {voidModal && (
-          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setVoidModal(false)}>
-            <motion.div className="modal" onClick={e => e.stopPropagation()} initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}>
+          <motion.div
+            className="modal-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setVoidModal(false)}
+          >
+            <motion.div
+              className="modal"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+            >
               <div className="modal-header">
                 <h3>Void or Refund Transaction</h3>
-                <button className="btn btn-icon btn-ghost" onClick={() => setVoidModal(false)}><X size={18} /></button>
+                <button
+                  className="btn btn-icon btn-ghost"
+                  onClick={() => setVoidModal(false)}
+                >
+                  <X size={18} />
+                </button>
               </div>
               <div className="modal-body">
                 <div className="form-group">
                   <label className="form-label">Action</label>
-                  <select className="input select" value={voidType} onChange={e => setVoidType(e.target.value as any)}>
+                  <select
+                    className="input select"
+                    value={voidType}
+                    onChange={(e) => setVoidType(e.target.value as any)}
+                  >
                     <option value="voided">Void Order (Restores raw ingredient stock)</option>
                     <option value="refunded">Refund Order (Keeps raw ingredient stock deducted)</option>
                   </select>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Reason *</label>
-                  <textarea className="input" rows={3} placeholder="e.g. Customer returned items / Spilled drink" value={voidReason} onChange={e => setVoidReason(e.target.value)} style={{ resize: 'vertical' }} />
+                  <textarea
+                    className="input"
+                    rows={3}
+                    placeholder="e.g. Customer returned items / Spilled drink"
+                    value={voidReason}
+                    onChange={(e) => setVoidReason(e.target.value)}
+                    style={{ resize: 'vertical' }}
+                  />
                 </div>
               </div>
               <div className="modal-footer">
-                <button className="btn btn-ghost" onClick={() => setVoidModal(false)}>Cancel</button>
-                <button className="btn btn-danger" onClick={handleConfirmVoid} disabled={savingVoid}>
-                  {savingVoid ? <span className="spinner-sm" /> : <><RotateCcw size={15} /> Confirm</>}
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => setVoidModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={handleConfirmVoid}
+                  disabled={savingVoid}
+                >
+                  {savingVoid ? (
+                    <span className="spinner-sm" />
+                  ) : (
+                    <>
+                      <RotateCcw size={15} /> Confirm
+                    </>
+                  )}
                 </button>
               </div>
             </motion.div>

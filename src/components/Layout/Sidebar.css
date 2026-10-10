@@ -152,3 +152,31 @@
 }
 .sidebar-icon-btn:hover { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.9); }
 .sidebar-icon-btn.danger:hover { background: var(--danger-bg); color: var(--danger); }
+
+/* Mobile backdrop and close button */
+.sidebar-backdrop {
+  display: none;
+}
+
+.mobile-close-btn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+    z-index: 99;
+  }
+
+  .mobile-close-btn {
+    display: flex;
+  }
+}

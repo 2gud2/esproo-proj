@@ -13,6 +13,7 @@ import InventoryPage from './pages/Inventory';
 import ExpensesPage from './pages/Expenses';
 import ReportsPage from './pages/Reports';
 import UsersPage from './pages/Users';
+import SettingsPage from './pages/Settings';
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/pos/receipt/:saleId" element={<ProtectedRoute><ReceiptPage /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute><InventoryPage /></ProtectedRoute>} />
           <Route path="/expenses" element={<ProtectedRoute><ExpensesPage /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
 
           {/* Admin only */}
           <Route path="/menu" element={<ProtectedRoute adminOnly><MenuPage /></ProtectedRoute>} />

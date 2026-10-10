@@ -162,3 +162,22 @@ export function formatQuantityWithUnit(qty: number, unit: string): string {
   const formattedQty = Number.isInteger(qty) ? qty.toString() : parseFloat(qty.toFixed(3)).toString();
   return `${formattedQty} ${unit}`;
 }
+
+/**
+ * Check if two unit strings are compatible (both known and in same category, or normalized strings equal).
+ */
+export function areUnitsCompatible(a: string | undefined | null, b: string | undefined | null): boolean {
+  if (!a || !b) return false;
+  const normA = normalizeUnit(a).toLowerCase();
+  const normB = normalizeUnit(b).toLowerCase();
+  if (normA === normB) return true;
+
+  const defA = getUnitDefinition(a);
+  const defB = getUnitDefinition(b);
+  if (defA && defB && defA.category === defB.category) {
+    return true;
+  }
+
+  return false;
+}
+

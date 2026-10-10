@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingBag, Package, AlertTriangle,
-  Inbox, ChevronRight, ArrowRight
+  Inbox, ChevronRight, ArrowRight, Flame
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
@@ -11,8 +11,9 @@ import {
 import Sidebar from '../components/Layout/Sidebar';
 import TopBar from '../components/Layout/TopBar';
 import { useAuth } from '../contexts/AuthContext';
-import { loadIngredients, loadSales, loadMenuItems } from '../lib/db';
-import type { Ingredient, Sale, MenuItem } from '../lib/mockData';
+import { loadIngredients, loadSales } from '../lib/db';
+import { isLowStock, isOutOfStock } from '../lib/stockStatus';
+import type { Ingredient, Sale } from '../lib/mockData';
 import { format, subDays, isToday, isSameWeek, isSameMonth } from 'date-fns';
 import './Dashboard.css';
 
@@ -26,19 +27,16 @@ export default function DashboardPage() {
   const [bsPeriod, setBsPeriod] = useState<'today' | 'week' | 'month'>('week');
   const [sales, setSales] = useState<Sale[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [_menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function fetchDashboardData() {
     try {
-      const [salesData, ingredientsData, menuData] = await Promise.all([
+      const [salesData, ingredientsData] = await Promise.all([
         loadSales(),
-        loadIngredients(),
-        loadMenuItems(true)
+        loadIngredients()
       ]);
       setSales(salesData);
       setIngredients(ingredientsData);
-      setMenuItems(menuData);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     } finally {
@@ -66,9 +64,35 @@ export default function DashboardPage() {
     return todaySales.reduce((sum, s) => sum + s.total, 0);
   }, [todaySales]);
 
+  // Unified stock status counts
+  const lowStockCount = useMemo(() => ingredients.filter(isLowStock).length, [ingredients]);
+  const outOfStockCount = useMemo(() => ingredients.filter(isOutOfStock).length, [ingredients]);
+  const totalStockAlerts = lowStockCount + outOfStockCount;
+
   const lowStockIngredients = useMemo(() => {
-    return ingredients.filter(i => i.stock_quantity <= i.low_stock_threshold);
+    return ingredients.filter(i => isLowStock(i) || isOutOfStock(i));
   }, [ingredients]);
+
+  // Top Seller Today
+  const topSellerToday = useMemo(() => {
+    const itemMap = new Map<string, { name: string; qtySold: number }>();
+    todaySales.forEach(s => {
+      (s.items || []).forEach((item: any) => {
+        const baseName = item.product?.name || item.name || 'Item';
+        const sizeName = item.size_name || item.size?.name || null;
+        const name = sizeName ? `${baseName} (${sizeName})` : baseName;
+        const qty = Number(item.qty || 1);
+        const existing = itemMap.get(name);
+        if (existing) {
+          existing.qtySold += qty;
+        } else {
+          itemMap.set(name, { name, qtySold: qty });
+        }
+      });
+    });
+    const sorted = Array.from(itemMap.values()).sort((a, b) => b.qtySold - a.qtySold);
+    return sorted[0] || null;
+  }, [todaySales]);
 
   // Today's Sales Hourly Chart Data
   const todayChartData = useMemo(() => {
@@ -174,11 +198,13 @@ export default function DashboardPage() {
         }
 
         if (inPeriod) {
-          s.items.forEach((item: any) => {
-            const name = item.product?.name || item.name || 'Item';
+          (s.items || []).forEach((item: any) => {
+            const baseName = item.product?.name || item.name || 'Item';
+            const sizeName = item.size_name || item.size?.name || null;
+            const name = sizeName ? `${baseName} (${sizeName})` : baseName;
             const cat = item.product?.category || item.category || 'General';
             const price = item.product?.price || item.price || 0;
-            const qty = item.qty || 1;
+            const qty = Number(item.qty || 1);
             const rev = price * qty;
 
             const existing = itemMap.get(name);
@@ -234,13 +260,22 @@ export default function DashboardPage() {
       route: '/inventory',
     },
     {
-      label: 'Low-Stock Alerts',
-      value: lowStockIngredients.length.toString(),
-      sub: lowStockIngredients.length > 0 ? `${lowStockIngredients.length} item(s) need restocking` : 'All stock levels healthy',
+      label: 'Stock Alerts',
+      value: totalStockAlerts.toString(),
+      sub: `${lowStockCount} low · ${outOfStockCount} out`,
       icon: AlertTriangle,
-      color: lowStockIngredients.length > 0 ? '#E65100' : '#2E7D32',
-      bg: lowStockIngredients.length > 0 ? 'rgba(230,81,0,0.1)' : 'rgba(46,125,50,0.1)',
+      color: totalStockAlerts > 0 ? '#E65100' : '#2E7D32',
+      bg: totalStockAlerts > 0 ? 'rgba(230,81,0,0.1)' : 'rgba(46,125,50,0.1)',
       route: '/inventory',
+    },
+    {
+      label: 'Top Seller Today',
+      value: topSellerToday ? topSellerToday.name : 'None yet',
+      sub: topSellerToday ? `${topSellerToday.qtySold} sold today` : 'No orders completed today',
+      icon: Flame,
+      color: '#D97706',
+      bg: 'rgba(217,119,6,0.1)',
+      route: user?.role === 'admin' ? '/reports' : '/pos',
     },
   ];
 
@@ -271,7 +306,7 @@ export default function DashboardPage() {
           </button>
         } />
         <main className="page-body compact-dashboard">
-          {/* Stat Cards Grid (Compact & Clickable) */}
+          {/* Stat Cards Grid (5 Cards, Compact & Clickable) */}
           <motion.div
             className="stats-grid"
             variants={{ show: { transition: { staggerChildren: 0.05 } } }}
@@ -381,9 +416,9 @@ export default function DashboardPage() {
                   </h3>
                   <p className="page-subtitle">Matching Inventory alert list</p>
                 </div>
-                <button className="badge badge-link" onClick={() => navigate('/inventory')} style={{ border: 'none', cursor: 'pointer' }}>
-                  <span className={`badge ${lowStockIngredients.length > 0 ? 'badge-danger' : 'badge-success'}`}>
-                    {lowStockIngredients.length} Low
+                <button className="badge-link" onClick={() => navigate('/inventory')}>
+                  <span className={`badge ${totalStockAlerts > 0 ? 'badge-danger' : 'badge-success'}`}>
+                    {totalStockAlerts} Alerts
                   </span>
                 </button>
               </div>
@@ -406,7 +441,9 @@ export default function DashboardPage() {
                       <span className="low-stock-cat">Unit: {ing.unit}</span>
                     </div>
                     <div className="low-stock-meta">
-                      <span className="badge badge-danger">{ing.stock_quantity} {ing.unit}</span>
+                      <span className={`badge ${isOutOfStock(ing) ? 'badge-danger' : 'badge-warning'}`}>
+                        {ing.stock_quantity} {ing.unit}
+                      </span>
                       <span className="low-stock-min">Min: {ing.low_stock_threshold}</span>
                     </div>
                   </div>
@@ -477,4 +514,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

@@ -10,11 +10,12 @@
 .timeframe-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   padding: 4px 6px;
   border-radius: var(--radius-lg);
+  flex-wrap: wrap;
 }
 
 .timeframe-label {
@@ -54,6 +55,147 @@
   box-shadow: 0 2px 8px rgba(184, 115, 51, 0.25);
 }
 
+/* Row expander and main row flex container */
+.main-row-content {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-light);
+  transition: background var(--transition);
+}
+
+.main-row-content:hover {
+  background: var(--surface-2);
+}
+
+.parent-row-expanded .main-row-content {
+  background: rgba(148, 58, 31, 0.04);
+  border-bottom-color: var(--border);
+}
+
+.batch-expand-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.batch-expand-btn:hover {
+  background: var(--surface-2);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.batch-expand-btn.expanded {
+  background: var(--primary-muted);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* Stock Period & Days Left Chips */
+.days-left-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  width: fit-content;
+}
+
+.days-left-chip.good {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success);
+}
+
+.days-left-chip.near_expiry {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+}
+
+.days-left-chip.expired_today,
+.days-left-chip.expired {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.days-left-chip.none {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Nested Batch Breakdown Sub-Table */
+.batch-breakdown-panel {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.batch-breakdown-inner {
+  padding: 14px 20px 18px 48px;
+}
+
+.batch-breakdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.batch-subtable {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  font-size: 0.8125rem;
+}
+
+.batch-subtable th {
+  background: rgba(0, 0, 0, 0.02);
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.batch-subtable td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.batch-subtable tr:last-child td {
+  border-bottom: none;
+}
+
+.batch-row.depleted {
+  opacity: 0.6;
+  background: rgba(0, 0, 0, 0.01);
+}
+
+.batch-row.expired {
+  background: rgba(239, 68, 68, 0.04);
+}
+
+/* Legacy badges */
 .expiry-badge {
   display: inline-flex;
   align-items: center;
@@ -70,6 +212,12 @@
   color: var(--danger);
 }
 
+.expiry-badge.expired_today {
+  background: rgba(239, 68, 68, 0.18);
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .expiry-badge.near_expiry {
   background: rgba(245, 158, 11, 0.15);
   color: #d97706;
@@ -78,6 +226,10 @@
 .expiry-badge.good {
   background: var(--surface-2);
   color: var(--text-muted);
+}
+
+.expiry-badge.none {
+  display: none;
 }
 
 .adjust-modal-type-btn {
@@ -97,12 +249,6 @@
   transition: all var(--transition);
 }
 
-.adjust-modal-type-btn.active.add {
-  background: rgba(34, 197, 94, 0.12);
-  border-color: var(--success);
-  color: var(--success);
-}
-
 .adjust-modal-type-btn.active.reduce {
   background: rgba(239, 68, 68, 0.12);
   border-color: var(--danger);
@@ -113,4 +259,102 @@
   background: rgba(184, 115, 51, 0.12);
   border-color: var(--primary);
   color: var(--primary);
+}
+
+/* Inventory Type Filter Tabs */
+.inventory-type-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 4px;
+  border-radius: var(--radius-lg);
+}
+
+.type-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: var(--font);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.type-tab-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.type-tab-btn.active {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--primary);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.type-tab-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--border);
+  color: var(--text-secondary);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+}
+
+.type-tab-btn.active .type-tab-count {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Item Type Modal Selector */
+.item-type-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.item-type-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.item-type-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--border-focus);
+}
+
+.item-type-btn.active {
+  background: var(--primary-muted);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.badge-info {
+  background: rgba(14, 165, 233, 0.12);
+  color: #0284c7;
+}
+
+@media (max-width: 1024px) {
+  .main-row-content {
+    flex-wrap: wrap;
+  }
 }

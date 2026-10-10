@@ -1,82 +1,94 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Edit2, X, Save, Trash2, UtensilsCrossed, Upload,
-  ChefHat, Coffee, Search, LayoutGrid, List as ListIcon,
-  Eye, CheckCircle, AlertCircle
+  Plus, Edit2, Trash2, X, ChefHat, Coffee, LayoutGrid, List as ListIcon,
+  Eye, UtensilsCrossed, RotateCcw, AlertTriangle, PackageCheck, Layers,
+  Utensils, Package
 } from 'lucide-react';
 import Sidebar from '../components/Layout/Sidebar';
 import TopBar from '../components/Layout/TopBar';
-import type { MenuItem, Ingredient, MenuItemIngredient } from '../lib/mockData';
+import SizesEditor, { type SizeRow } from '../components/Menu/SizesEditor';
+import RecipeEditor, { type RecipeEditorRow } from '../components/Menu/RecipeEditor';
+import AddonsManager from '../components/Menu/AddonsManager';
+import OrderSuppliesModal from '../components/Menu/OrderSuppliesModal';
+import type { MenuItem, Ingredient, MenuItemIngredient, MenuItemSize } from '../lib/mockData';
 import {
-  loadMenuItems, saveMenuItem, softDeleteMenuItem,
-  loadIngredients, loadMenuItemRecipe, uploadMenuImage,
-  loadCategories, saveCategories
+  loadMenuItems,
+  saveMenuItemConfig,
+  softDeleteMenuItem,
+  loadCategories,
+  saveCategories,
+  reassignMenuItemsCategory,
+  loadIngredients,
+  loadMenuItemRecipe,
+  loadSizes,
+  uploadMenuImage
 } from '../lib/db';
 import {
   calculateIngredientCost,
-  getCompatibleUnits,
-  convertUnitQuantity
+  convertUnitQuantity,
+  areUnitsCompatible
 } from '../lib/unitConversion';
+import { computeLine } from '../lib/orderCalc';
 import toast from 'react-hot-toast';
 import './Menu.css';
 
-interface RecipeRow {
-  ingredient_id: string;
-  quantity_used: number | string;
-  unit: string;
-}
-
-const defaultForm = {
-  name: '',
-  category: 'Beverages',
-  price: '' as number | string,
-  image_url: '' as string | null,
-};
-
 export default function MenuPage() {
+  // Main Top-level View Tab: Menu Items vs Add-ons
+  const [mainTab, setMainTab] = useState<'items' | 'addons'>('items');
+
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [itemSizesMap, setItemSizesMap] = useState<Record<string, MenuItemSize[]>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState('All');
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
 
-  // Modals
+  // Order Supplies Modal
+  const [showSuppliesModal, setShowSuppliesModal] = useState(false);
+
+  // Add / Edit Modal State
   const [modal, setModal] = useState<'add' | 'edit' | null>(null);
   const [editing, setEditing] = useState<MenuItem | null>(null);
-  const [form, setForm] = useState(defaultForm);
-  const [recipeRows, setRecipeRows] = useState<RecipeRow[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    category: '',
+    price: '',
+    image_url: null as string | null,
+  });
+  const [hasSizes, setHasSizes] = useState(false);
+  const [sizes, setSizes] = useState<SizeRow[]>([]);
+  const [recipeRows, setRecipeRows] = useState<RecipeEditorRow[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Recipe View Modal (Triggered on click/select of product)
-  const [selectedRecipeItem, setSelectedRecipeItem] = useState<MenuItem | null>(null);
-  const [selectedRecipe, setSelectedRecipe] = useState<MenuItemIngredient[]>([]);
-  const [loadingRecipe, setLoadingRecipe] = useState(false);
-
-  // Category management state & modals
+  // Category Management State
   const [isEditingCategories, setIsEditingCategories] = useState(false);
-  const [showAddCategoryInput, setShowAddCategoryInput] = useState(false);
   const [newCatName, setNewCatName] = useState('');
+  const [showAddCategoryInput, setShowAddCategoryInput] = useState(false);
   const [deleteCatModal, setDeleteCatModal] = useState(false);
   const [catToDelete, setCatToDelete] = useState<string | null>(null);
 
-  // Dynamic list of categories for filter bar
-  const allCategories = useMemo(() => {
-    const list = Array.from(new Set([...categories, ...menuItems.map(m => m.category).filter(Boolean)])).filter(c => c !== 'Condiments');
-    return ['All', ...list];
-  }, [categories, menuItems]);
-
-  // Delete confirmation
+  // Delete Modal
   const [deleteModal, setDeleteModal] = useState(false);
   const [deletingItem, setDeletingItem] = useState<MenuItem | null>(null);
 
+  // View Recipe Modal
+  const [viewRecipeModal, setViewRecipeModal] = useState(false);
+  const [selectedRecipeItem, setSelectedRecipeItem] = useState<MenuItem | null>(null);
+  const [selectedRecipeSizes, setSelectedRecipeSizes] = useState<MenuItemSize[]>([]);
+  const [selectedRecipeRows, setSelectedRecipeRows] = useState<MenuItemIngredient[]>([]);
+  const [viewerSelectedSizeId, setViewerSelectedSizeId] = useState<string>('');
+  const [viewerOrderType, setViewerOrderType] = useState<'dine_in' | 'takeout'>('dine_in');
+  const [loadingRecipe, setLoadingRecipe] = useState(false);
+
   async function fetchData() {
     try {
+      setLoading(true);
       const [items, ings, cats] = await Promise.all([
         loadMenuItems(false),
         loadIngredients(),
@@ -84,48 +96,63 @@ export default function MenuPage() {
       ]);
       setMenuItems(items);
       setIngredients(ings);
-      setCategories(cats.filter(c => c !== 'Condiments'));
-    } catch (err) {
+      setCategories(cats.filter((c) => c !== 'Condiments'));
+
+      // Fetch sizes for all menu items
+      const sizesMap: Record<string, MenuItemSize[]> = {};
+      await Promise.all(
+        items.map(async (item) => {
+          const s = await loadSizes(item.id);
+          if (s.length > 0) {
+            sizesMap[item.id] = s;
+          }
+        })
+      );
+      setItemSizesMap(sizesMap);
+    } catch {
       toast.error('Failed to load menu data');
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  const filtered = useMemo(() => menuItems.filter(m => {
-    const matchCat = filterCat === 'All' || m.category === filterCat;
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
-  }), [menuItems, search, filterCat]);
-
-  const activeCount = menuItems.filter(m => m.is_active).length;
-
-  // ─── View Recipe Modal Handler ───
   async function openRecipeView(item: MenuItem) {
     setSelectedRecipeItem(item);
+    setViewRecipeModal(true);
     setLoadingRecipe(true);
     try {
-      const rec = await loadMenuItemRecipe(item.id);
-      setSelectedRecipe(rec);
-    } catch (err) {
+      const [rec, itemSizes] = await Promise.all([
+        loadMenuItemRecipe(item.id),
+        loadSizes(item.id),
+      ]);
+      setSelectedRecipeRows(rec);
+      setSelectedRecipeSizes(itemSizes);
+      if (itemSizes.length > 0) {
+        const defaultSize = itemSizes.find((s) => s.is_default) || itemSizes[0];
+        setViewerSelectedSizeId(defaultSize.id);
+      } else {
+        setViewerSelectedSizeId('');
+      }
+      setViewerOrderType('dine_in');
+    } catch {
       toast.error('Failed to load recipe');
     } finally {
       setLoadingRecipe(false);
     }
   }
 
-  // ─── Category Management Handlers ───
+  // ─── Category Handlers ───
   async function handleAddCategory() {
+    if (!newCatName.trim()) return;
     const name = newCatName.trim();
-    if (!name) { toast.error('Please enter a category name'); return; }
-    if (name.toLowerCase() === 'condiments') { toast.error('Condiments category is not allowed'); return; }
-    if (categories.some(c => c.toLowerCase() === name.toLowerCase())) {
-      toast.error(`Category "${name}" already exists`);
+    if (categories.includes(name)) {
+      toast.error('Category already exists');
       return;
     }
-
     const updated = [...categories, name];
     setCategories(updated);
     await saveCategories(updated);
@@ -133,7 +160,12 @@ export default function MenuPage() {
     toast.success(`Category "${name}" added!`);
   }
 
-  function promptDeleteCategory(cat: string) {
+  function handleDeleteCategoryClick(cat: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (categories.length <= 1) {
+      toast.error('You must keep at least one category');
+      return;
+    }
     setCatToDelete(cat);
     setDeleteCatModal(true);
   }
@@ -141,32 +173,30 @@ export default function MenuPage() {
   async function confirmDeleteCategory() {
     if (!catToDelete) return;
     const cat = catToDelete;
-    const updated = categories.filter(c => c !== cat);
-    setCategories(updated);
-    await saveCategories(updated);
-
-    // Reassign items with deleted category to default category
+    const updated = categories.filter((c) => c !== cat);
     const fallbackCat = updated[0] || 'Beverages';
-    const affectedItems = menuItems.filter(m => m.category === cat);
-    if (affectedItems.length > 0) {
-      for (const item of affectedItems) {
-        await saveMenuItem({ ...item, category: fallbackCat }, []);
+
+    try {
+      await reassignMenuItemsCategory(cat, fallbackCat);
+      setCategories(updated);
+      await saveCategories(updated);
+
+      if (filterCat === cat) {
+        setFilterCat('All');
       }
-    }
 
-    if (filterCat === cat) {
-      setFilterCat('All');
+      setDeleteCatModal(false);
+      setCatToDelete(null);
+      toast.success(`Category "${cat}" deleted and items reassigned to "${fallbackCat}"!`);
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete category');
     }
-
-    setDeleteCatModal(false);
-    setCatToDelete(null);
-    toast.success(`Category "${cat}" deleted!`);
-    await fetchData();
   }
 
-  // ─── Form Handlers ───
+  // ─── Add / Edit Item Form Handlers ───
   function f(field: keyof typeof form, val: any) {
-    setForm(prev => ({ ...prev, [field]: val }));
+    setForm((prev) => ({ ...prev, [field]: val }));
   }
 
   function openAdd() {
@@ -176,6 +206,8 @@ export default function MenuPage() {
       price: '',
       image_url: null,
     });
+    setHasSizes(false);
+    setSizes([]);
     setRecipeRows([]);
     setEditing(null);
     setImageFile(null);
@@ -194,48 +226,40 @@ export default function MenuPage() {
     setImageFile(null);
     setEditing(item);
 
-    // Load recipe
-    const recipe = await loadMenuItemRecipe(item.id);
-    setRecipeRows(recipe.map(r => ({
-      ingredient_id: r.ingredient_id,
-      quantity_used: r.quantity_used != null ? String(r.quantity_used) : '1',
-      unit: r.unit,
-    })));
+    const [recipe, existingSizes] = await Promise.all([
+      loadMenuItemRecipe(item.id),
+      loadSizes(item.id),
+    ]);
+
+    if (existingSizes.length > 0) {
+      setHasSizes(true);
+      setSizes(
+        existingSizes.map((s) => ({
+          id: s.id,
+          name: s.name,
+          price: String(s.price),
+          ingredient_multiplier: String(s.ingredient_multiplier ?? 1),
+          sort_order: s.sort_order ?? 0,
+          is_default: Boolean(s.is_default),
+          is_active: Boolean(s.is_active),
+        }))
+      );
+    } else {
+      setHasSizes(false);
+      setSizes([]);
+    }
+
+    setRecipeRows(
+      recipe.map((r) => ({
+        id: r.id,
+        ingredient_id: r.ingredient_id,
+        quantity_used: r.quantity_used != null ? String(r.quantity_used) : '1',
+        unit: r.unit,
+        size_id: r.size_id || null,
+        usage_scope: r.usage_scope || 'always',
+      }))
+    );
     setModal('edit');
-  }
-
-  function addRecipeRow() {
-    if (ingredients.length === 0) {
-      toast.error('No ingredients available. Add ingredients in Inventory first.');
-      return;
-    }
-    const usedIds = new Set(recipeRows.map(r => r.ingredient_id));
-    const available = ingredients.find(i => !usedIds.has(i.id));
-    if (!available) {
-      toast.error('All ingredients are already in the recipe');
-      return;
-    }
-    setRecipeRows(prev => [...prev, {
-      ingredient_id: available.id,
-      quantity_used: '1',
-      unit: available.unit,
-    }]);
-  }
-
-  function updateRecipeRow(index: number, field: keyof RecipeRow, value: any) {
-    setRecipeRows(prev => prev.map((row, i) => {
-      if (i !== index) return row;
-      const updated = { ...row, [field]: value };
-      if (field === 'ingredient_id') {
-        const ing = ingredients.find(ig => ig.id === value);
-        if (ing) updated.unit = ing.unit;
-      }
-      return updated;
-    }));
-  }
-
-  function removeRecipeRow(index: number) {
-    setRecipeRows(prev => prev.filter((_, i) => i !== index));
   }
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -260,13 +284,146 @@ export default function MenuPage() {
     if (fileRef.current) fileRef.current.value = '';
   }
 
-  async function handleSave() {
-    if (!form.name.trim()) { toast.error('Menu item name is required'); return; }
-    
-    const numPrice = form.price === '' ? 0 : Number(form.price);
-    if (isNaN(numPrice) || numPrice < 0) { toast.error('Price cannot be negative'); return; }
+  // Live COGS preview calculations in Edit Modal
+  const editModalCalculations = useMemo(() => {
+    const ingredientsMap = new Map<string, Ingredient>();
+    for (const ing of ingredients) {
+      ingredientsMap.set(ing.id, ing);
+    }
 
-    const finalCategory = form.category;
+    const tempMenuItem: MenuItem = {
+      id: editing?.id || 'temp',
+      name: form.name || 'Sample Item',
+      category: form.category || 'Beverages',
+      price: Number(form.price) || 0,
+      is_active: true,
+    };
+
+    const formattedRecipe: MenuItemIngredient[] = recipeRows.map((r, i) => ({
+      id: r.id || `row-${i}`,
+      menu_item_id: tempMenuItem.id,
+      ingredient_id: r.ingredient_id,
+      quantity_used: Number(r.quantity_used) || 0,
+      unit: r.unit,
+      size_id: r.size_id || null,
+      usage_scope: r.usage_scope || 'always',
+      ingredient: ingredientsMap.get(r.ingredient_id),
+    }));
+
+    if (hasSizes && sizes.length > 0) {
+      return sizes.map((s) => {
+        const sizeObj: MenuItemSize = {
+          id: s.id || s.name,
+          menu_item_id: tempMenuItem.id,
+          name: s.name,
+          price: Number(s.price) || 0,
+          ingredient_multiplier: Number(s.ingredient_multiplier) || 1,
+          sort_order: s.sort_order,
+          is_default: Boolean(s.is_default),
+          is_active: true,
+        };
+
+        const dineInLine = computeLine({
+          menuItem: tempMenuItem,
+          size: sizeObj,
+          qty: 1,
+          orderType: 'dine_in',
+          recipe: formattedRecipe,
+          ingredientsById: ingredientsMap,
+        });
+
+        const takeoutLine = computeLine({
+          menuItem: tempMenuItem,
+          size: sizeObj,
+          qty: 1,
+          orderType: 'takeout',
+          recipe: formattedRecipe,
+          ingredientsById: ingredientsMap,
+        });
+
+        const price = Number(s.price) || 0;
+        const dineInCogs = dineInLine.cogs_per_serving + dineInLine.cogs_supplies_per_serving;
+        const takeoutCogs = takeoutLine.cogs_per_serving + takeoutLine.cogs_supplies_per_serving;
+        const dineInMargin = price > 0 ? ((price - dineInCogs) / price) * 100 : 0;
+        const takeoutMargin = price > 0 ? ((price - takeoutCogs) / price) * 100 : 0;
+
+        return {
+          sizeName: s.name || 'Unnamed',
+          price,
+          isDefault: s.is_default,
+          dineInCogs,
+          takeoutCogs,
+          dineInMargin,
+          takeoutMargin,
+        };
+      });
+    }
+
+    // Single item without sizes
+    const price = Number(form.price) || 0;
+    const dineInLine = computeLine({
+      menuItem: tempMenuItem,
+      qty: 1,
+      orderType: 'dine_in',
+      recipe: formattedRecipe,
+      ingredientsById: ingredientsMap,
+    });
+
+    const takeoutLine = computeLine({
+      menuItem: tempMenuItem,
+      qty: 1,
+      orderType: 'takeout',
+      recipe: formattedRecipe,
+      ingredientsById: ingredientsMap,
+    });
+
+    const dineInCogs = dineInLine.cogs_per_serving + dineInLine.cogs_supplies_per_serving;
+    const takeoutCogs = takeoutLine.cogs_per_serving + takeoutLine.cogs_supplies_per_serving;
+    const dineInMargin = price > 0 ? ((price - dineInCogs) / price) * 100 : 0;
+    const takeoutMargin = price > 0 ? ((price - takeoutCogs) / price) * 100 : 0;
+
+    return [
+      {
+        sizeName: 'Standard',
+        price,
+        isDefault: true,
+        dineInCogs,
+        takeoutCogs,
+        dineInMargin,
+        takeoutMargin,
+      },
+    ];
+  }, [form, hasSizes, sizes, recipeRows, ingredients, editing]);
+
+  async function handleSave() {
+    if (!form.name.trim()) {
+      toast.error('Menu item name is required');
+      return;
+    }
+
+    if (hasSizes) {
+      if (sizes.length === 0) {
+        toast.error('Please add at least one size or disable multiple sizes');
+        return;
+      }
+      for (const s of sizes) {
+        if (!s.name.trim()) {
+          toast.error('All sizes must have a name');
+          return;
+        }
+        const p = Number(s.price);
+        if (isNaN(p) || p < 0) {
+          toast.error(`Please enter a valid price for size "${s.name}"`);
+          return;
+        }
+      }
+    } else {
+      const numPrice = form.price === '' ? 0 : Number(form.price);
+      if (isNaN(numPrice) || numPrice < 0) {
+        toast.error('Price cannot be negative');
+        return;
+      }
+    }
 
     // Validate recipe rows
     for (const row of recipeRows) {
@@ -275,13 +432,22 @@ export default function MenuPage() {
         toast.error('All recipe quantities must be greater than 0');
         return;
       }
+      const ing = ingredients.find((i) => i.id === row.ingredient_id);
+      if (ing && !areUnitsCompatible(row.unit, ing.unit)) {
+        toast.error(`Incompatible unit "${row.unit}" for ingredient "${ing.name}"`);
+        return;
+      }
     }
 
-    // Check for duplicate ingredients in recipe
-    const ids = recipeRows.map(r => r.ingredient_id);
-    if (new Set(ids).size !== ids.length) {
-      toast.error('Duplicate ingredients in recipe. Each ingredient can only appear once.');
-      return;
+    // Duplicate detection check
+    const seen = new Set<string>();
+    for (const r of recipeRows) {
+      const key = `${r.ingredient_id}__${r.size_id || 'all'}__${r.usage_scope || 'always'}`;
+      if (seen.has(key)) {
+        toast.error('Duplicate recipe entries found with the same item, size, and scope.');
+        return;
+      }
+      seen.add(key);
     }
 
     setSaving(true);
@@ -289,30 +455,54 @@ export default function MenuPage() {
       let imageUrl = form.image_url;
       if (imageFile) {
         const uploaded = await uploadMenuImage(imageFile);
-        if (uploaded) imageUrl = uploaded;
+        if (uploaded) {
+          imageUrl = uploaded;
+        }
       }
 
-      await saveMenuItem(
+      let defaultPrice = Number(form.price) || 0;
+      let formattedSizes: any[] | undefined = undefined;
+
+      if (hasSizes) {
+        const defaultSize = sizes.find((s) => s.is_default) || sizes[0];
+        defaultPrice = Number(defaultSize.price);
+        formattedSizes = sizes.map((s, idx) => ({
+          id: s.id,
+          name: s.name.trim(),
+          price: Number(s.price),
+          ingredient_multiplier: Number(s.ingredient_multiplier) || 1,
+          sort_order: s.sort_order ?? idx,
+          is_default: Boolean(s.is_default),
+          is_active: s.is_active ?? true,
+        }));
+      }
+
+      const formattedRows = recipeRows.map((r) => ({
+        ingredient_id: r.ingredient_id,
+        quantity_used: Number(r.quantity_used),
+        unit: r.unit,
+        size_id: hasSizes ? (r.size_id || null) : null,
+        usage_scope: r.usage_scope || 'always',
+      }));
+
+      await saveMenuItemConfig(
         {
           id: editing?.id,
           name: form.name.trim(),
-          category: finalCategory,
-          price: numPrice,
+          category: form.category,
+          price: defaultPrice,
           image_url: imageUrl,
           is_active: editing?.is_active ?? true,
         },
-        recipeRows.map(r => ({
-          ingredient_id: r.ingredient_id,
-          quantity_used: Number(r.quantity_used) || 0,
-          unit: r.unit,
-        }))
+        formattedSizes,
+        formattedRows
       );
 
-      toast.success(editing ? 'Menu item updated!' : 'Menu item added!');
+      toast.success(editing ? 'Menu item updated!' : 'Menu item created!');
       setModal(null);
       await fetchData();
-    } catch (err) {
-      toast.error('Failed to save menu item');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save menu item');
     } finally {
       setSaving(false);
     }
@@ -327,794 +517,936 @@ export default function MenuPage() {
     if (!deletingItem) return;
     try {
       await softDeleteMenuItem(deletingItem.id);
-      toast.success(`"${deletingItem.name}" removed from menu`);
+      toast.success(`"${deletingItem.name}" deactivated`);
       setDeleteModal(false);
       setDeletingItem(null);
       await fetchData();
-    } catch (err) {
-      toast.error('Failed to delete menu item');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete menu item');
     }
   }
 
-  // Calculate COGS and recipe items for selectedRecipeItem in view modal with unit conversion
-  const recipeCalculation = useMemo(() => {
-    if (!selectedRecipeItem) return { items: [], totalCogs: 0 };
-    const items = selectedRecipe.map(r => {
-      const ing = ingredients.find(i => i.id === r.ingredient_id) || r.ingredient;
-      const recipeUnit = r.unit || ing?.unit || 'pcs';
-      const invUnit = ing?.unit || 'pcs';
-      const qty = Number(r.quantity_used) || 0;
-      const itemCost = calculateIngredientCost(qty, recipeUnit, ing);
-      const isConverted = recipeUnit.toLowerCase().trim() !== invUnit.toLowerCase().trim();
-      const qtyInInv = convertUnitQuantity(qty, recipeUnit, invUnit);
-      return {
-        id: r.id,
-        name: ing?.name || 'Unknown Ingredient',
-        quantityUsed: qty,
-        unit: recipeUnit,
-        inventoryUnit: invUnit,
-        unitCost: ing?.cost_per_unit ?? 0,
-        isConverted,
-        qtyInInv: Number.isInteger(qtyInInv) ? qtyInInv : parseFloat(qtyInInv.toFixed(4)),
-        itemCost,
-      };
+  async function handleReactivate(item: MenuItem) {
+    try {
+      await saveMenuItemConfig({
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        price: item.price,
+        image_url: item.image_url,
+        is_active: true,
+      });
+      toast.success(`"${item.name}" reactivated!`);
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to reactivate item');
+    }
+  }
+
+  // Filtered menu items
+  const filtered = useMemo(() => {
+    return menuItems.filter((item) => {
+      const matchCat = filterCat === 'All' || item.category === filterCat;
+      const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
+      return matchCat && matchSearch;
     });
-    const totalCogs = items.reduce((sum, item) => sum + item.itemCost, 0);
-    return { items, totalCogs };
-  }, [selectedRecipe, selectedRecipeItem, ingredients]);
+  }, [menuItems, filterCat, search]);
+
+  const allCategoryTabs = useMemo(() => {
+    const list = Array.from(
+      new Set([...categories, ...menuItems.map((m) => m.category).filter(Boolean)])
+    ).filter((c) => c !== 'Condiments');
+    return ['All', ...list];
+  }, [categories, menuItems]);
+
+  // Viewer Modal Calculation
+  const viewerCalculation = useMemo(() => {
+    if (!selectedRecipeItem) return null;
+
+    const currentSize = selectedRecipeSizes.find((s) => s.id === viewerSelectedSizeId) || null;
+    const baseSellingPrice = currentSize ? currentSize.price : selectedRecipeItem.price;
+
+    const rawList: any[] = [];
+    const supplyList: any[] = [];
+    let totalCogs = 0;
+
+    for (const r of selectedRecipeRows) {
+      if (r.size_id && currentSize && r.size_id !== currentSize.id) continue;
+      if (r.size_id && !currentSize) continue;
+      if (r.usage_scope && r.usage_scope !== 'always' && r.usage_scope !== viewerOrderType) continue;
+
+      const ing = ingredients.find((i) => i.id === r.ingredient_id) || r.ingredient;
+      const isSupply = ing?.item_type === 'supply';
+      const multiplier = isSupply ? 1 : (currentSize?.ingredient_multiplier ?? 1);
+      const effectiveQty = Number(r.quantity_used) * multiplier;
+      const cost = calculateIngredientCost(effectiveQty, r.unit, ing);
+      totalCogs += cost;
+
+      const invUnit = ing?.unit || r.unit || 'pcs';
+      const isConverted = r.unit.toLowerCase().trim() !== invUnit.toLowerCase().trim();
+      const qtyInInv = convertUnitQuantity(effectiveQty, r.unit, invUnit);
+
+      const entry = {
+        name: ing?.name || 'Unknown Item',
+        quantity_used: effectiveQty,
+        unit: r.unit,
+        unit_cost: ing?.cost_per_unit ?? 0,
+        cost,
+        inv_unit: invUnit,
+        is_converted: isConverted,
+        qty_in_inv: qtyInInv,
+        scope: r.usage_scope || 'always',
+      };
+
+      if (isSupply) {
+        supplyList.push(entry);
+      } else {
+        rawList.push(entry);
+      }
+    }
+
+    const grossProfit = baseSellingPrice - totalCogs;
+    const margin = baseSellingPrice > 0 ? (grossProfit / baseSellingPrice) * 100 : 0;
+
+    return {
+      sellingPrice: baseSellingPrice,
+      rawList,
+      supplyList,
+      totalCogs,
+      grossProfit,
+      margin,
+    };
+  }, [selectedRecipeItem, selectedRecipeSizes, selectedRecipeRows, viewerSelectedSizeId, viewerOrderType, ingredients]);
 
   return (
     <div className="app-layout">
       <Sidebar />
       <div className="main-content">
         <TopBar
-          title="Menu Management"
+          title="Menu & Recipes"
+          searchPlaceholder="Search items or add-ons..."
+          onSearch={setSearch}
           action={
-            <button className="btn btn-primary" onClick={openAdd}>
-              <Plus size={15} /> Add Menu Item
-            </button>
-          }
-        />
-        <main className="page-body">
-          {/* Stats: Categories summary card removed per user request */}
-          <div className="menu-stats">
-            <div className="card card-pad">
-              <div className="stat-sub">Total Items</div>
-              <div className="stat-value" style={{ fontSize: '1.5rem' }}>{menuItems.length}</div>
-              <div className="stat-label">In menu catalog</div>
-            </div>
-            <div className="card card-pad">
-              <div className="stat-sub">Active Items</div>
-              <div className="stat-value" style={{ fontSize: '1.5rem', color: 'var(--success)' }}>{activeCount}</div>
-              <div className="stat-label">Visible in POS</div>
-            </div>
-          </div>
-
-          {/* Filter Bar with Search, Edit Categories, and View Switcher */}
-          <div className="card card-pad category-bar-card" style={{ marginBottom: 20 }}>
-            {/* Top Toolbar: Search Bar + View Switcher */}
-            <div className="menu-toolbar">
-              <div className="menu-search-wrap">
-                <Search size={16} color="var(--text-muted)" />
-                <input
-                  type="text"
-                  placeholder="Search menu items..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                />
-                {search && (
-                  <button
-                    onClick={() => setSearch('')}
-                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-
-              <div className="view-toggle-group">
-                <button
-                  className={`view-toggle-btn${viewMode === 'card' ? ' active' : ''}`}
-                  onClick={() => setViewMode('card')}
-                  title="Card View"
-                >
-                  <LayoutGrid size={15} /> Cards
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowSuppliesModal(true)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <PackageCheck size={15} /> Takeout & Order Supplies
+              </button>
+              {mainTab === 'items' && (
+                <button type="button" className="btn btn-primary" onClick={openAdd}>
+                  <Plus size={15} /> Add Menu Item
                 </button>
-                <button
-                  className={`view-toggle-btn${viewMode === 'list' ? ' active' : ''}`}
-                  onClick={() => setViewMode('list')}
-                  title="List View"
-                >
-                  <ListIcon size={15} /> List
-                </button>
-              </div>
-            </div>
-
-            {/* Category Chips and Category Management */}
-            <div className="category-bar-header" style={{ marginTop: 4 }}>
-              <div className="category-title-area">
-                <h3 style={{ fontSize: '0.95rem' }}>Categories</h3>
-                <button
-                  className={`btn btn-sm ${isEditingCategories ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => {
-                    setIsEditingCategories(!isEditingCategories);
-                    setShowAddCategoryInput(false);
-                  }}
-                  style={{ fontSize: '0.78rem', padding: '4px 10px', gap: 4, borderRadius: 'var(--radius-md)' }}
-                  title="Toggle Edit Mode for Categories"
-                >
-                  {isEditingCategories ? (
-                    <>Done Editing</>
-                  ) : (
-                    <>
-                      <Edit2 size={13} /> Edit Categories
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <div className="category-chips-wrap">
-                {allCategories.map(c => {
-                  const isAll = c === 'All';
-                  const isActive = filterCat === c;
-                  const isEditable = isEditingCategories && !isAll;
-                  return (
-                    <motion.button
-                      key={c}
-                      layout
-                      className={`cat-chip${isActive ? ' active' : ''}`}
-                      onClick={() => setFilterCat(c)}
-                      animate={{ paddingRight: isEditable ? 6 : 14 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    >
-                      <span>{c}</span>
-                      <AnimatePresence initial={false}>
-                        {isEditable && (
-                          <motion.span
-                            key="delete-btn-wrap"
-                            initial={{ width: 0, opacity: 0, scale: 0, marginLeft: 0 }}
-                            animate={{ width: 'auto', opacity: 1, scale: 1, marginLeft: 6 }}
-                            exit={{ width: 0, opacity: 0, scale: 0, marginLeft: 0 }}
-                            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
-                          >
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              className="cat-chip-delete-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                promptDeleteCategory(c);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.stopPropagation();
-                                  promptDeleteCategory(c);
-                                }
-                              }}
-                              title={`Delete category "${c}"`}
-                            >
-                              <X size={10} />
-                            </span>
-                          </motion.span>
-                        )}
-                      </AnimatePresence>
-                    </motion.button>
-                  );
-                })}
-
-                {/* + Add Category Button when in Edit Mode */}
-                <AnimatePresence>
-                  {isEditingCategories && !showAddCategoryInput && (
-                    <motion.button
-                      key="add-cat-btn"
-                      className="btn btn-ghost btn-sm add-cat-btn"
-                      initial={{ opacity: 0, scale: 0.8, x: -10 }}
-                      animate={{ opacity: 1, scale: 1, x: 0 }}
-                      exit={{ opacity: 0, scale: 0.8, x: -10 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                      onClick={() => setShowAddCategoryInput(true)}
-                      style={{ fontSize: '0.75rem', padding: '4px 12px', gap: 4, borderRadius: 'var(--radius-full)', border: '1.5px dashed var(--primary)', color: 'var(--primary)' }}
-                    >
-                      <Plus size={14} /> Add Category
-                    </motion.button>
-                  )}
-
-                  {/* Inline Category Creator Input */}
-                  {isEditingCategories && showAddCategoryInput && (
-                    <motion.div
-                      key="add-cat-form"
-                      className="inline-add-cat-form"
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                    >
-                      <input
-                        autoFocus
-                        type="text"
-                        className="input"
-                        placeholder="Category name..."
-                        value={newCatName}
-                        onChange={e => setNewCatName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleAddCategory();
-                            setShowAddCategoryInput(false);
-                          } else if (e.key === 'Escape') {
-                            setShowAddCategoryInput(false);
-                            setNewCatName('');
-                          }
-                        }}
-                        style={{ width: 130, height: 28, padding: '2px 8px', fontSize: '0.78rem' }}
-                      />
-                      <button className="btn btn-primary btn-sm" onClick={() => { handleAddCategory(); setShowAddCategoryInput(false); }} style={{ padding: '2px 8px', fontSize: '0.75rem' }}>
-                        Add
-                      </button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => { setShowAddCategoryInput(false); setNewCatName(''); }} style={{ padding: '2px 6px' }}>
-                        <X size={12} />
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-          </div>
-
-          {/* Product Items: Card View or List View */}
-          {loading ? (
-            <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
-              <span className="spinner-sm" style={{ marginRight: 8 }} /> Loading menu...
-            </div>
-          ) : viewMode === 'card' ? (
-            /* Card View */
-            <div className="menu-grid">
-              <AnimatePresence>
-                {filtered.map(item => (
-                  <motion.div
-                    key={item.id}
-                    className={`menu-card${!item.is_active ? ' inactive' : ''}`}
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    whileHover={{ y: -3 }}
-                    onClick={() => openRecipeView(item)}
-                  >
-                    <div className="menu-card-img">
-                      {item.image_url ? (
-                        <img src={item.image_url} alt={item.name} />
-                      ) : (
-                        <Coffee size={32} className="placeholder-icon" />
-                      )}
-                    </div>
-                    {!item.is_active && <div className="inactive-badge">Inactive</div>}
-                    <div className="menu-card-body">
-                      <div className="menu-card-name">{item.name}</div>
-                      <div className="menu-card-cat">
-                        <span className="badge badge-neutral" style={{ fontSize: '0.65rem', padding: '1px 6px' }}>
-                          {item.category}
-                        </span>
-                      </div>
-                      <div className="menu-card-bottom">
-                        <span className="menu-card-price">₱{item.price.toLocaleString()}</span>
-                        <div className="menu-card-actions" onClick={e => e.stopPropagation()}>
-                          <button
-                            className="btn btn-icon btn-ghost"
-                            onClick={() => openRecipeView(item)}
-                            title="View Recipe & COGS"
-                            style={{ padding: 4, color: 'var(--primary)' }}
-                          >
-                            <ChefHat size={14} />
-                          </button>
-                          <button className="btn btn-icon btn-ghost" onClick={() => openEdit(item)} title="Edit" style={{ padding: 4 }}>
-                            <Edit2 size={14} />
-                          </button>
-                          {item.is_active && (
-                            <button className="btn btn-icon btn-ghost" onClick={() => openDelete(item)} title="Remove from menu" style={{ padding: 4, color: 'var(--danger)' }}>
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-              {filtered.length === 0 && !loading && (
-                <div className="empty-state" style={{ gridColumn: '1/-1' }}>
-                  <UtensilsCrossed size={32} />
-                  <p>No menu items found</p>
-                  <button className="btn btn-primary btn-sm" onClick={openAdd}>
-                    <Plus size={14} /> Add your first menu item
-                  </button>
-                </div>
               )}
             </div>
+          }
+        />
+
+        <main className="page-body">
+          {/* Top Segmented Control: Menu Items | Add-ons */}
+          <div className="menu-segmented-nav">
+            <button
+              type="button"
+              className={`menu-segment-btn ${mainTab === 'items' ? 'active' : ''}`}
+              onClick={() => setMainTab('items')}
+            >
+              <Coffee size={16} /> Menu Items ({menuItems.length})
+            </button>
+            <button
+              type="button"
+              className={`menu-segment-btn ${mainTab === 'addons' ? 'active' : ''}`}
+              onClick={() => setMainTab('addons')}
+            >
+              <Layers size={16} /> Add-ons & Customizations
+            </button>
+          </div>
+
+          {mainTab === 'addons' ? (
+            /* Add-ons Management Tab */
+            <AddonsManager
+              ingredients={ingredients}
+              categories={categories}
+              menuItems={menuItems}
+              onRefresh={fetchData}
+            />
           ) : (
-            /* List View */
-            <div className="menu-list-card">
-              <table className="menu-list-table">
-                <thead>
-                  <tr>
-                    <th>Product / Item</th>
-                    <th>Category</th>
-                    <th>Selling Price</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(item => (
-                    <tr
-                      key={item.id}
-                      className="menu-list-row"
-                      onClick={() => openRecipeView(item)}
+            /* Menu Items Tab */
+            <>
+              {/* Header Controls: Categories & View Switcher */}
+              <div className="menu-controls card card-pad" style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Categories:</span>
+                      <button
+                        className={`btn btn-ghost btn-sm ${isEditingCategories ? 'active' : ''}`}
+                        onClick={() => setIsEditingCategories(!isEditingCategories)}
+                        style={{ fontSize: '0.75rem', padding: '3px 8px' }}
+                      >
+                        {isEditingCategories ? 'Done Managing' : 'Manage Categories'}
+                      </button>
+                    </div>
+
+                    <div className="category-chips-wrap">
+                      {allCategoryTabs.map((cat) => {
+                        const isActive = filterCat === cat;
+                        const isDeletable = isEditingCategories && cat !== 'All' && categories.includes(cat);
+
+                        return (
+                          <motion.button
+                            key={cat}
+                            className={`cat-chip ${isActive ? 'active' : ''}`}
+                            onClick={() => setFilterCat(cat)}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                          >
+                            <span>{cat}</span>
+                            <AnimatePresence>
+                              {isDeletable && (
+                                <motion.span
+                                  initial={{ scale: 0, opacity: 0 }}
+                                  animate={{ scale: 1, opacity: 1 }}
+                                  exit={{ scale: 0, opacity: 0 }}
+                                  className="cat-chip-delete-btn"
+                                  onClick={(e) => handleDeleteCategoryClick(cat, e)}
+                                  title={`Delete category "${cat}"`}
+                                  style={{ marginLeft: 6 }}
+                                >
+                                  <X size={10} />
+                                </motion.span>
+                              )}
+                            </AnimatePresence>
+                          </motion.button>
+                        );
+                      })}
+
+                      {isEditingCategories && !showAddCategoryInput && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm add-cat-btn"
+                          onClick={() => setShowAddCategoryInput(true)}
+                          style={{ fontSize: '0.75rem', padding: '4px 12px', gap: 4, borderRadius: 'var(--radius-full)', border: '1.5px dashed var(--primary)', color: 'var(--primary)' }}
+                        >
+                          <Plus size={14} /> Add Category
+                        </button>
+                      )}
+
+                      {isEditingCategories && showAddCategoryInput && (
+                        <div className="inline-add-cat-form">
+                          <input
+                            autoFocus
+                            type="text"
+                            className="input"
+                            placeholder="Category name..."
+                            value={newCatName}
+                            onChange={(e) => setNewCatName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddCategory();
+                                setShowAddCategoryInput(false);
+                              } else if (e.key === 'Escape') {
+                                setShowAddCategoryInput(false);
+                                setNewCatName('');
+                              }
+                            }}
+                            style={{ width: 130, height: 28, padding: '2px 8px', fontSize: '0.78rem' }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => {
+                              handleAddCategory();
+                              setShowAddCategoryInput(false);
+                            }}
+                            style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                          >
+                            Add
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => {
+                              setShowAddCategoryInput(false);
+                              setNewCatName('');
+                            }}
+                            style={{ padding: '2px 6px' }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="view-toggle" style={{ flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      className={`view-toggle-btn ${viewMode === 'card' ? 'active' : ''}`}
+                      onClick={() => setViewMode('card')}
+                      title="Card Grid View"
                     >
-                      <td>
-                        <div className="menu-list-item-cell">
-                          <div className="menu-list-thumb">
+                      <LayoutGrid size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+                      onClick={() => setViewMode('list')}
+                      title="Table List View"
+                    >
+                      <ListIcon size={15} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items Display */}
+              {loading ? (
+                <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <span className="spinner-sm" style={{ marginRight: 8 }} /> Loading menu...
+                </div>
+              ) : viewMode === 'card' ? (
+                <div className="menu-grid">
+                  <AnimatePresence>
+                    {filtered.map((item) => {
+                      const sizes = itemSizesMap[item.id] || [];
+                      return (
+                        <motion.div
+                          key={item.id}
+                          className={`menu-card${!item.is_active ? ' inactive' : ''}`}
+                          layout
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          whileHover={{ y: -3 }}
+                          onClick={() => openRecipeView(item)}
+                        >
+                          <div className="menu-card-img">
                             {item.image_url ? (
                               <img src={item.image_url} alt={item.name} />
                             ) : (
-                              <Coffee size={20} color="var(--primary)" />
+                              <Coffee size={32} className="placeholder-icon" />
                             )}
                           </div>
-                          <div>
-                            <div className="menu-list-name">{item.name}</div>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Click to view recipe</span>
+                          {!item.is_active && <div className="inactive-badge">Inactive</div>}
+                          <div className="menu-card-body">
+                            <div className="menu-card-name">{item.name}</div>
+                            <div className="menu-card-cat">
+                              <span className="badge badge-neutral" style={{ fontSize: '0.65rem', padding: '1px 6px' }}>
+                                {item.category}
+                              </span>
+                              {sizes.length > 0 && (
+                                <span className="badge badge-info" style={{ fontSize: '0.65rem', padding: '1px 6px', marginLeft: 4 }}>
+                                  {sizes.length} sizes
+                                </span>
+                              )}
+                            </div>
+                            <div className="menu-card-bottom">
+                              <span className="menu-card-price">
+                                ₱{item.price.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {sizes.length > 1 && <small style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 3 }}>from</small>}
+                              </span>
+                              <div className="menu-card-actions" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  className="btn btn-icon btn-ghost"
+                                  onClick={() => openRecipeView(item)}
+                                  title="View Recipe & COGS"
+                                  style={{ padding: 4, color: 'var(--primary)' }}
+                                >
+                                  <ChefHat size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-icon btn-ghost"
+                                  onClick={() => openEdit(item)}
+                                  title="Edit"
+                                  style={{ padding: 4 }}
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                {item.is_active ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-icon btn-ghost"
+                                    onClick={() => openDelete(item)}
+                                    title="Remove from menu"
+                                    style={{ padding: 4, color: 'var(--danger)' }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-ghost"
+                                    onClick={() => handleReactivate(item)}
+                                    title="Reactivate Item"
+                                    style={{ padding: '3px 8px', fontSize: '0.72rem', color: 'var(--success)' }}
+                                  >
+                                    <RotateCcw size={12} style={{ marginRight: 3 }} /> Reactivate
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
-                          {item.category}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.95rem' }}>
-                        ₱{item.price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td>
-                        <span className={`badge ${item.is_active ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.72rem' }}>
-                          {item.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td onClick={e => e.stopPropagation()}>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button
-                            className="btn btn-sm btn-ghost"
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                  {filtered.length === 0 && !loading && (
+                    <div className="empty-state" style={{ gridColumn: '1/-1' }}>
+                      <UtensilsCrossed size={32} />
+                      <p>No menu items found</p>
+                      <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>
+                        <Plus size={14} /> Add your first menu item
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* List View */
+                <div className="menu-list-card">
+                  <table className="menu-list-table">
+                    <thead>
+                      <tr>
+                        <th>Product / Item</th>
+                        <th>Category</th>
+                        <th>Options / Sizes</th>
+                        <th>Selling Price</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((item) => {
+                        const sizes = itemSizesMap[item.id] || [];
+                        return (
+                          <tr
+                            key={item.id}
+                            className="menu-list-row"
                             onClick={() => openRecipeView(item)}
-                            title="View Recipe"
-                            style={{ padding: '4px 8px', gap: 4, fontSize: '0.78rem' }}
                           >
-                            <Eye size={13} /> Recipe
-                          </button>
-                          <button
-                            className="btn btn-icon btn-ghost"
-                            onClick={() => openEdit(item)}
-                            title="Edit"
-                            style={{ padding: 6 }}
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          {item.is_active && (
-                            <button
-                              className="btn btn-icon btn-ghost"
-                              onClick={() => openDelete(item)}
-                              title="Remove from menu"
-                              style={{ padding: 6, color: 'var(--danger)' }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filtered.length === 0 && !loading && (
-                <div className="empty-state" style={{ padding: 40 }}>
-                  <UtensilsCrossed size={32} />
-                  <p>No menu items found</p>
-                  <button className="btn btn-primary btn-sm" onClick={openAdd}>
-                    <Plus size={14} /> Add your first menu item
-                  </button>
+                            <td>
+                              <div className="menu-list-item-cell">
+                                <div className="menu-list-thumb">
+                                  {item.image_url ? (
+                                    <img src={item.image_url} alt={item.name} />
+                                  ) : (
+                                    <Coffee size={20} color="var(--primary)" />
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="menu-list-name">{item.name}</div>
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Click to view recipe</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
+                                {item.category}
+                              </span>
+                            </td>
+                            <td>
+                              {sizes.length > 0 ? (
+                                <span className="badge badge-info" style={{ fontSize: '0.72rem' }}>
+                                  {sizes.map((s) => s.name).join(', ')}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Single Size</span>
+                              )}
+                            </td>
+                            <td style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.95rem' }}>
+                              ₱{item.price.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td>
+                              <span className={`badge ${item.is_active ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.72rem' }}>
+                                {item.is_active ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                            <td onClick={(e) => e.stopPropagation()}>
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-ghost"
+                                  onClick={() => openRecipeView(item)}
+                                  title="View Recipe"
+                                  style={{ padding: '4px 8px', gap: 4, fontSize: '0.78rem' }}
+                                >
+                                  <Eye size={13} /> Recipe
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-icon btn-ghost"
+                                  onClick={() => openEdit(item)}
+                                  title="Edit"
+                                  style={{ padding: 6 }}
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                {item.is_active ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-icon btn-ghost"
+                                    onClick={() => openDelete(item)}
+                                    title="Remove from menu"
+                                    style={{ padding: 6, color: 'var(--danger)' }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-ghost"
+                                    onClick={() => handleReactivate(item)}
+                                    title="Reactivate Item"
+                                    style={{ padding: '4px 8px', gap: 4, fontSize: '0.78rem', color: 'var(--success)' }}
+                                  >
+                                    <RotateCcw size={13} /> Reactivate
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {filtered.length === 0 && !loading && (
+                    <div className="empty-state" style={{ padding: 40 }}>
+                      <UtensilsCrossed size={32} />
+                      <p>No menu items found</p>
+                      <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>
+                        <Plus size={14} /> Add your first menu item
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </main>
       </div>
 
-      {/* ─── Recipe View & COGS Modal (Opened on click/select of product) ─── */}
+      {/* Add / Edit Menu Item Modal */}
       <AnimatePresence>
-        {selectedRecipeItem && (
+        {modal && (
           <motion.div
             className="modal-overlay"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setSelectedRecipeItem(null)}
+            onClick={() => setModal(null)}
           >
             <motion.div
-              className="modal modal-wide"
-              onClick={e => e.stopPropagation()}
-              initial={{ scale: 0.92, opacity: 0 }}
+              className="modal modal-wide menu-modal"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.92, opacity: 0 }}
-              style={{ maxWidth: 640 }}
+              exit={{ scale: 0.95, opacity: 0 }}
             >
               <div className="modal-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 'var(--radius-md)', background: 'var(--primary-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
-                    <ChefHat size={20} />
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{selectedRecipeItem.name}</h3>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
-                      <span className="badge badge-neutral" style={{ fontSize: '0.68rem' }}>{selectedRecipeItem.category}</span>
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                        Selling Price: <strong style={{ color: 'var(--primary)' }}>₱{selectedRecipeItem.price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <button className="btn btn-icon btn-ghost" onClick={() => setSelectedRecipeItem(null)}><X size={18} /></button>
+                <h3>{modal === 'add' ? 'Add Menu Item & Recipe' : 'Edit Menu Item & Recipe'}</h3>
+                <button type="button" className="btn btn-icon btn-ghost" onClick={() => setModal(null)}>
+                  <X size={18} />
+                </button>
               </div>
 
               <div className="modal-body">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
-                    RECIPE (INGREDIENTS PER 1 UNIT SOLD)
-                  </div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Auto-calculated from Raw Ingredients
-                  </span>
+                {/* Basic Product Info */}
+                <div className="form-group">
+                  <label className="form-label">Product Name *</label>
+                  <input
+                    className="input"
+                    placeholder="e.g. Spanish Latte, Croissant, Matcha Frappe"
+                    value={form.name}
+                    onChange={(e) => f('name', e.target.value)}
+                    required
+                  />
                 </div>
 
+                <div className="form-row" style={{ display: 'flex', gap: 12 }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">Category *</label>
+                    <select className="input select" value={form.category} onChange={(e) => f('category', e.target.value)}>
+                      {categories.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {!hasSizes && (
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">Selling Price (₱) *</label>
+                      <input
+                        type="number"
+                        className="input"
+                        min={0}
+                        step="0.5"
+                        placeholder="0.00"
+                        value={form.price}
+                        onChange={(e) => f('price', e.target.value)}
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Product Image Upload */}
+                <div className="form-group">
+                  <label className="form-label">Product Photo (Optional)</label>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    {imagePreview ? (
+                      <div className="img-preview-box">
+                        <img src={imagePreview} alt="Preview" />
+                        <button type="button" className="btn btn-icon btn-ghost img-clear-btn" onClick={clearImage}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="img-upload-placeholder" onClick={() => fileRef.current?.click()}>
+                        <Coffee size={24} color="var(--text-muted)" />
+                        <span>Upload photo</span>
+                      </div>
+                    )}
+                    <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageSelect} />
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()}>
+                      {imagePreview ? 'Change Photo' : 'Select Photo'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sizes Editor Component */}
+                <SizesEditor
+                  hasSizes={hasSizes}
+                  onToggleHasSizes={setHasSizes}
+                  sizes={sizes}
+                  onChangeSizes={setSizes}
+                />
+
+                {/* Recipe Editor Component */}
+                <RecipeEditor
+                  hasSizes={hasSizes}
+                  sizes={sizes}
+                  ingredients={ingredients}
+                  recipeRows={recipeRows}
+                  onChangeRecipeRows={setRecipeRows}
+                />
+
+                {/* Live COGS & Profit Margin Preview */}
+                <div className="cogs-preview-dashboard">
+                  <div className="cogs-preview-header">
+                    <span className="cogs-preview-title">Live Cost & Margin Analysis</span>
+                    <span className="cogs-preview-sub">Computed per serving for Dine-in and Takeout</span>
+                  </div>
+
+                  <div className="cogs-analysis-grid">
+                    {editModalCalculations.map((calc, i) => (
+                      <div key={i} className="cogs-size-card">
+                        <div className="cogs-size-title">
+                          <strong>{calc.sizeName}</strong>
+                          <span className="size-price-tag">₱{calc.price.toFixed(2)}</span>
+                        </div>
+                        <div className="cogs-dual-metrics">
+                          <div className="metric-col">
+                            <span className="col-header">Dine-in</span>
+                            <div className="metric-row">
+                              <span>COGS:</span>
+                              <strong>₱{calc.dineInCogs.toFixed(2)}</strong>
+                            </div>
+                            <div className="metric-row">
+                              <span>Margin:</span>
+                              <strong style={{ color: calc.dineInMargin >= 40 ? '#10b981' : calc.dineInMargin >= 20 ? '#f59e0b' : '#ef4444' }}>
+                                {calc.dineInMargin.toFixed(0)}%
+                              </strong>
+                            </div>
+                          </div>
+
+                          <div className="metric-col">
+                            <span className="col-header">Takeout</span>
+                            <div className="metric-row">
+                              <span>COGS:</span>
+                              <strong>₱{calc.takeoutCogs.toFixed(2)}</strong>
+                            </div>
+                            <div className="metric-row">
+                              <span>Margin:</span>
+                              <strong style={{ color: calc.takeoutMargin >= 40 ? '#10b981' : calc.takeoutMargin >= 20 ? '#f59e0b' : '#ef4444' }}>
+                                {calc.takeoutMargin.toFixed(0)}%
+                              </strong>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setModal(null)} disabled={saving}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                  {saving ? <span className="spinner-sm" /> : modal === 'add' ? 'Save Product' : 'Save Changes'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Item Modal */}
+      <AnimatePresence>
+        {deleteModal && deletingItem && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDeleteModal(false)}>
+            <motion.div className="modal" onClick={(e) => e.stopPropagation()} initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}>
+              <div className="modal-header">
+                <h3 style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <AlertTriangle size={18} /> Deactivate Menu Item
+                </h3>
+                <button type="button" className="btn btn-icon btn-ghost" onClick={() => setDeleteModal(false)}><X size={18} /></button>
+              </div>
+              <div className="modal-body">
+                <p>Are you sure you want to deactivate <strong>"{deletingItem.name}"</strong>?</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 8 }}>
+                  This will hide the item from the POS register while preserving historic sales, size options, and recipe configurations.
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setDeleteModal(false)}>Cancel</button>
+                <button type="button" className="btn btn-danger" onClick={confirmDelete}>Deactivate Item</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Category Confirmation Modal */}
+      <AnimatePresence>
+        {deleteCatModal && catToDelete && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDeleteCatModal(false)}>
+            <motion.div className="modal" onClick={(e) => e.stopPropagation()} initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}>
+              <div className="modal-header">
+                <h3 style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <AlertTriangle size={18} /> Delete Category
+                </h3>
+                <button type="button" className="btn btn-icon btn-ghost" onClick={() => setDeleteCatModal(false)}><X size={18} /></button>
+              </div>
+              <div className="modal-body">
+                <p>Are you sure you want to delete the category <strong>"{catToDelete}"</strong>?</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 8 }}>
+                  Any menu items currently under this category will automatically be reassigned to the default category without altering their recipes.
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setDeleteCatModal(false)}>Cancel</button>
+                <button type="button" className="btn btn-danger" onClick={confirmDeleteCategory}>Delete Category</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* View Recipe & COGS Modal */}
+      <AnimatePresence>
+        {viewRecipeModal && selectedRecipeItem && viewerCalculation && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setViewRecipeModal(false)}>
+            <motion.div className="modal modal-wide recipe-view-modal" onClick={(e) => e.stopPropagation()} initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}>
+              <div className="modal-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div className="recipe-modal-thumb">
+                    {selectedRecipeItem.image_url ? (
+                      <img src={selectedRecipeItem.image_url} alt={selectedRecipeItem.name} />
+                    ) : (
+                      <Coffee size={24} color="var(--primary)" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{selectedRecipeItem.name}</h3>
+                    <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>{selectedRecipeItem.category}</span>
+                  </div>
+                </div>
+                <button type="button" className="btn btn-icon btn-ghost" onClick={() => setViewRecipeModal(false)}><X size={18} /></button>
+              </div>
+
+              <div className="modal-body">
                 {loadingRecipe ? (
                   <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                     <span className="spinner-sm" style={{ marginRight: 8 }} /> Loading recipe details...
                   </div>
-                ) : recipeCalculation.items.length === 0 ? (
-                  <div className="recipe-empty" style={{ padding: 30 }}>
-                    <UtensilsCrossed size={28} opacity={0.4} style={{ marginBottom: 8 }} />
-                    <p style={{ margin: 0 }}>No recipe specified for this item yet.</p>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      style={{ marginTop: 12 }}
-                      onClick={() => {
-                        const itm = selectedRecipeItem;
-                        setSelectedRecipeItem(null);
-                        openEdit(itm);
-                      }}
-                    >
-                      <Edit2 size={13} /> Edit Item to Add Recipe
-                    </button>
-                  </div>
                 ) : (
-                  <div>
-                    {/* Detailed COGS Breakdown Table */}
-                    <div className="recipe-breakdown-card">
-                      <table className="recipe-breakdown-table">
+                  <>
+                    {/* Size Tabs & Dine-in/Takeout Switcher */}
+                    <div className="viewer-controls-bar">
+                      {selectedRecipeSizes.length > 0 && (
+                        <div className="viewer-size-tabs">
+                          {selectedRecipeSizes.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              className={`viewer-size-tab ${viewerSelectedSizeId === s.id ? 'active' : ''}`}
+                              onClick={() => setViewerSelectedSizeId(s.id)}
+                            >
+                              {s.name} (₱{s.price.toFixed(2)})
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="viewer-order-type-switch">
+                        <button
+                          type="button"
+                          className={`order-switch-btn ${viewerOrderType === 'dine_in' ? 'active' : ''}`}
+                          onClick={() => setViewerOrderType('dine_in')}
+                        >
+                          Dine-in
+                        </button>
+                        <button
+                          type="button"
+                          className={`order-switch-btn ${viewerOrderType === 'takeout' ? 'active' : ''}`}
+                          onClick={() => setViewerOrderType('takeout')}
+                        >
+                          Takeout
+                        </button>
+                      </div>
+                    </div>
+
+                {/* Metrics Summary Box */}
+                <div className="cogs-summary-card">
+                  <div className="cogs-stat">
+                    <span className="cogs-stat-label">Selling Price</span>
+                    <span className="cogs-stat-val">₱{viewerCalculation.sellingPrice.toFixed(2)}</span>
+                  </div>
+                  <div className="cogs-divider" />
+                  <div className="cogs-stat">
+                    <span className="cogs-stat-label">Total COGS / Serving</span>
+                    <span className="cogs-stat-val" style={{ color: 'var(--danger)' }}>
+                      ₱{viewerCalculation.totalCogs.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="cogs-divider" />
+                  <div className="cogs-stat">
+                    <span className="cogs-stat-label">Gross Profit</span>
+                    <span className="cogs-stat-val" style={{ color: viewerCalculation.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                      ₱{viewerCalculation.grossProfit.toFixed(2)}
+                      <span style={{ fontSize: '0.72rem', display: 'block', fontWeight: 600 }}>
+                        ({viewerCalculation.margin.toFixed(1)}% margin)
+                      </span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tables: Ingredients and Supplies */}
+                <div className="viewer-tables-container">
+                  {/* Table 1: Raw Ingredients */}
+                  <div className="viewer-table-block">
+                    <h4 className="viewer-section-title">
+                      <Utensils size={15} /> Ingredients ({viewerCalculation.rawList.length})
+                    </h4>
+                    {viewerCalculation.rawList.length === 0 ? (
+                      <div className="viewer-empty-block">No raw ingredients configured.</div>
+                    ) : (
+                      <table className="table" style={{ fontSize: '0.8rem' }}>
                         <thead>
                           <tr>
                             <th>Ingredient</th>
-                            <th>Quantity per 1 Unit Sold</th>
+                            <th>Per Serving</th>
+                            <th>Unit Cost</th>
                             <th style={{ textAlign: 'right' }}>Cost</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {recipeCalculation.items.map((item, idx) => (
+                          {viewerCalculation.rawList.map((row, idx) => (
                             <tr key={idx}>
-                              <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                                {item.name}
-                              </td>
+                              <td style={{ fontWeight: 600 }}>{row.name}</td>
                               <td>
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                  <span style={{ fontWeight: 600 }}>{item.quantityUsed} {item.unit}</span>
-                                  {item.isConverted && (
-                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                      ≈ {item.qtyInInv} {item.inventoryUnit} ({item.unitCost > 0 ? `₱${item.unitCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}/${item.inventoryUnit}` : '₱0.00'})
-                                    </span>
-                                  )}
-                                </div>
+                                {row.quantity_used} {row.unit}
+                                {row.is_converted && (
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>
+                                    (= {parseFloat(row.qty_in_inv.toFixed(4))} {row.inv_unit})
+                                  </span>
+                                )}
                               </td>
-                              <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                                ₱{item.itemCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              <td>₱{row.unit_cost.toFixed(2)} / {row.inv_unit}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                                ₱{row.cost.toFixed(2)}
                               </td>
                             </tr>
                           ))}
-                          {/* Total COGS Row */}
-                          <tr className="cogs-total-row">
-                            <td colSpan={2}>
-                              Total COGS per Serving
-                            </td>
-                            <td style={{ textAlign: 'right', color: 'var(--primary)' }}>
-                              ₱{recipeCalculation.totalCogs.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                            </td>
-                          </tr>
                         </tbody>
                       </table>
-                    </div>
-
-                    {/* Explanatory notes & Margin summary */}
-                    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: 360, lineHeight: 1.4 }}>
-                        <strong>Cost of Goods Sold (COGS)</strong> – Total cost ng lahat ng ingredients at packaging na ginamit sa isang serving.
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>
-                          Gross Profit / Margin
-                        </div>
-                        <div style={{ fontSize: '1rem', fontWeight: 800, color: selectedRecipeItem.price - recipeCalculation.totalCogs >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                          ₱{(selectedRecipeItem.price - recipeCalculation.totalCogs).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                          <span style={{ fontSize: '0.75rem', fontWeight: 600, marginLeft: 4 }}>
-                            ({selectedRecipeItem.price > 0 ? (( (selectedRecipeItem.price - recipeCalculation.totalCogs) / selectedRecipeItem.price ) * 100).toFixed(1) : 0}%)
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => {
-                    const itm = selectedRecipeItem;
-                    setSelectedRecipeItem(null);
-                    openEdit(itm);
-                  }}
-                >
-                  <Edit2 size={14} /> Edit Item / Recipe
-                </button>
-                <button className="btn btn-primary" onClick={() => setSelectedRecipeItem(null)}>
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ─── Add/Edit Modal ─── */}
-      <AnimatePresence>
-        {modal && (
-          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)}>
-            <motion.div className="modal modal-wide" onClick={e => e.stopPropagation()} initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}>
-              <div className="modal-header">
-                <h3>{modal === 'add' ? 'Add Menu Item' : 'Edit Menu Item'}</h3>
-                <button className="btn btn-icon btn-ghost" onClick={() => setModal(null)}><X size={18} /></button>
-              </div>
-              <div className="modal-body">
-                {/* Image Upload */}
-                <div className="form-group">
-                  <label className="form-label">Product Image (optional)</label>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    onChange={handleImageSelect}
-                  />
-                  <div
-                    className={`image-upload-area${imagePreview ? ' has-image' : ''}`}
-                    onClick={() => fileRef.current?.click()}
-                  >
-                    {imagePreview ? (
-                      <>
-                        <img src={imagePreview} alt="Preview" />
-                        <button
-                          className="image-upload-remove"
-                          onClick={e => { e.stopPropagation(); clearImage(); }}
-                        >
-                          <X size={14} />
-                        </button>
-                      </>
+                  {/* Table 2: Packaging & Supplies */}
+                  <div className="viewer-table-block">
+                    <h4 className="viewer-section-title">
+                      <Package size={15} /> Packaging & Supplies ({viewerCalculation.supplyList.length})
+                    </h4>
+                    {viewerCalculation.supplyList.length === 0 ? (
+                      <div className="viewer-empty-block">No packaging or supplies applicable for this selection.</div>
                     ) : (
-                      <div className="image-upload-text">
-                        <Upload size={24} />
-                        <span>Click to upload an image</span>
-                        <span style={{ fontSize: '0.72rem' }}>PNG, JPG up to 5MB</span>
-                      </div>
+                      <table className="table" style={{ fontSize: '0.8rem' }}>
+                        <thead>
+                          <tr>
+                            <th>Supply Item</th>
+                            <th>Per Serving</th>
+                            <th>Unit Cost</th>
+                            <th style={{ textAlign: 'right' }}>Cost</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {viewerCalculation.supplyList.map((row, idx) => (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600 }}>{row.name}</td>
+                              <td>
+                                {row.quantity_used} {row.unit}
+                                {row.is_converted && (
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>
+                                    (= {parseFloat(row.qty_in_inv.toFixed(4))} {row.inv_unit})
+                                  </span>
+                                )}
+                              </td>
+                              <td>₱{row.unit_cost.toFixed(2)} / {row.inv_unit}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                                ₱{row.cost.toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     )}
                   </div>
                 </div>
-
-                {/* Name */}
-                <div className="form-group">
-                  <label className="form-label">Item Name *</label>
-                  <input className="input" placeholder="e.g. Matcha Latte" value={form.name} onChange={e => f('name', e.target.value)} />
-                </div>
-
-                {/* Category + Price */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  <div className="form-group">
-                    <label className="form-label">Category *</label>
-                    <select
-                      className="input select"
-                      value={form.category}
-                      onChange={e => f('category', e.target.value)}
-                    >
-                      {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Price (₱) *</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="input"
-                      placeholder="0.00"
-                      value={form.price}
-                      onFocus={e => e.target.select()}
-                      onChange={e => {
-                        const v = e.target.value.replace(',', '.');
-                        if (v === '' || /^\d*\.?\d*$/.test(v)) f('price', v);
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Recipe Section */}
-                <div className="recipe-section">
-                  <div className="recipe-header">
-                    <div className="recipe-header-title">
-                      <ChefHat size={16} />
-                      Recipe (Ingredients per 1 unit sold)
-                    </div>
-                    <button className="btn btn-sm btn-ghost" onClick={addRecipeRow}>
-                      <Plus size={13} /> Add Ingredient
-                    </button>
-                  </div>
-
-                  {recipeRows.length === 0 ? (
-                    <div className="recipe-empty">
-                      No ingredients added yet. Click "Add Ingredient" to build the recipe.
-                    </div>
-                  ) : (
-                    <div className="recipe-rows">
-                      {recipeRows.map((row, idx) => {
-                        const selectedIng = ingredients.find(i => i.id === row.ingredient_id);
-                        const currentUnit = row.unit || selectedIng?.unit || 'pcs';
-                        const compatibleUnits = getCompatibleUnits(selectedIng?.unit);
-                        const rowCost = calculateIngredientCost(Number(row.quantity_used) || 0, currentUnit, selectedIng);
-
-                        return (
-                          <div key={idx} className="recipe-row">
-                            <div className="form-group">
-                              {idx === 0 && <label className="form-label">Ingredient</label>}
-                              <select
-                                className="input select"
-                                value={row.ingredient_id}
-                                onChange={e => updateRecipeRow(idx, 'ingredient_id', e.target.value)}
-                              >
-                                {ingredients.map(ing => (
-                                  <option key={ing.id} value={ing.id}>{ing.name}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="form-group">
-                              {idx === 0 && <label className="form-label">Qty Used</label>}
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                className="input"
-                                placeholder="0"
-                                value={row.quantity_used}
-                                onFocus={e => e.target.select()}
-                                onChange={e => {
-                                  const v = e.target.value.replace(',', '.');
-                                  if (v === '' || /^\d*\.?\d*$/.test(v)) updateRecipeRow(idx, 'quantity_used', v);
-                                }}
-                              />
-                            </div>
-                            <div className="form-group">
-                              {idx === 0 && <label className="form-label">Unit</label>}
-                              <select
-                                className="input select"
-                                value={currentUnit}
-                                onChange={e => updateRecipeRow(idx, 'unit', e.target.value)}
-                                title="Select measurement unit"
-                              >
-                                {compatibleUnits.map(u => (
-                                  <option key={u.value} value={u.value}>{u.label}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="form-group">
-                              {idx === 0 && <label className="form-label">Cost</label>}
-                              <input
-                                className="input"
-                                value={rowCost > 0 ? `₱${rowCost.toFixed(2)}` : '₱0.00'}
-                                readOnly
-                                style={{ background: 'var(--surface-2)', fontWeight: 600, color: 'var(--primary)' }}
-                              />
-                            </div>
-                            <button
-                              className="recipe-remove-btn"
-                              onClick={() => removeRecipeRow(idx)}
-                              title="Remove ingredient"
-                              style={idx === 0 ? { marginTop: 20 } : {}}
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
-                <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                  {saving ? <span className="spinner-sm" /> : <><Save size={15} /> {modal === 'add' ? 'Add Item' : 'Save Changes'}</>}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ─── Delete Confirmation Modal ─── */}
-      <AnimatePresence>
-        {deleteModal && deletingItem && (
-          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDeleteModal(false)}>
-            <motion.div className="modal" onClick={e => e.stopPropagation()} initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }} style={{ maxWidth: 420 }}>
-              <div className="modal-header">
-                <h3>Remove Menu Item</h3>
-                <button className="btn btn-icon btn-ghost" onClick={() => setDeleteModal(false)}><X size={18} /></button>
-              </div>
-              <div className="modal-body">
-                <p className="confirm-text">
-                  Are you sure you want to remove <strong>"{deletingItem.name}"</strong> from the menu?
-                  It will be hidden from POS but historical sales data will be preserved.
-                </p>
-              </div>
-              <div className="modal-footer">
-                <button className="btn btn-ghost" onClick={() => setDeleteModal(false)}>Cancel</button>
-                <button className="btn btn-danger" onClick={confirmDelete}>
-                  <Trash2 size={15} /> Remove
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ─── Delete Category Confirmation Modal ─── */}
-      <AnimatePresence>
-        {deleteCatModal && catToDelete && (
-          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDeleteCatModal(false)} style={{ zIndex: 250 }}>
-            <motion.div className="modal" onClick={e => e.stopPropagation()} initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }} style={{ maxWidth: 440 }}>
-              <div className="modal-header">
-                <h3 style={{ color: 'var(--danger)' }}>Confirm Category Deletion</h3>
-                <button className="btn btn-icon btn-ghost" onClick={() => setDeleteCatModal(false)}><X size={18} /></button>
-              </div>
-              <div className="modal-body">
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                  Are you sure you want to delete the category <strong>"{catToDelete}"</strong>?
-                </p>
-                {menuItems.filter(m => m.category === catToDelete).length > 0 && (
-                  <div style={{ background: 'var(--warning-bg)', color: 'var(--warning)', padding: '10px 14px', borderRadius: 'var(--radius-md)', fontSize: '0.8125rem', marginTop: 10 }}>
-                    <strong>Warning:</strong> {menuItems.filter(m => m.category === catToDelete).length} menu item(s) belong to this category and will be reassigned.
-                  </div>
+                  </>
                 )}
               </div>
+
               <div className="modal-footer">
-                <button className="btn btn-ghost" onClick={() => setDeleteCatModal(false)}>Cancel</button>
-                <button className="btn btn-danger" onClick={confirmDeleteCategory}>
-                  <Trash2 size={15} /> Delete Category
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setViewRecipeModal(false);
+                    openEdit(selectedRecipeItem);
+                  }}
+                >
+                  <Edit2 size={14} /> Edit Item & Recipe
                 </button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Order Supplies Modal */}
+      <OrderSuppliesModal
+        isOpen={showSuppliesModal}
+        onClose={() => setShowSuppliesModal(false)}
+        ingredients={ingredients}
+      />
     </div>
   );
 }

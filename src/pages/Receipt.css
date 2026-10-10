@@ -36,6 +36,9 @@
 
 .receipt-header {
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .receipt-logo {
@@ -53,11 +56,44 @@
 .receipt-header h2 {
   font-size: 1.25rem;
   font-weight: 800;
+  margin: 0;
 }
 
 .receipt-header p {
   color: var(--text-muted);
   font-size: 0.75rem;
+  margin: 2px 0 6px;
+}
+
+.receipt-order-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  margin-top: 2px;
+}
+
+.receipt-order-tag.dine-in {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.receipt-order-tag.takeout {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+[data-theme='dark'] .receipt-order-tag.takeout {
+  background: rgba(234, 88, 12, 0.15);
+  color: #fdba74;
+  border-color: rgba(234, 88, 12, 0.35);
 }
 
 .receipt-meta {
@@ -106,7 +142,8 @@
 }
 
 .receipt-table td {
-  padding: 4px 0;
+  padding: 6px 0;
+  vertical-align: top;
   border-bottom: 1px dashed var(--border-light);
 }
 
@@ -116,6 +153,43 @@
 
 .receipt-table th:not(:first-child) {
   text-align: right;
+}
+
+.receipt-item-name-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.receipt-item-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.receipt-item-size {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.receipt-item-addons {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 6px;
+}
+
+.receipt-item-addon {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.receipt-item-note {
+  font-size: 0.68rem;
+  font-style: italic;
+  color: var(--warning);
+  padding-left: 6px;
 }
 
 .receipt-totals {
@@ -143,6 +217,11 @@
   border-top: 2px dashed var(--text-primary);
 }
 
+.receipt-total-row.tender-row {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
 .receipt-thanks {
   color: var(--text-muted);
   font-size: 0.75rem;
@@ -165,16 +244,30 @@
   font-size: 0.8rem;
 }
 
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
+
 @media print {
+  body {
+    background: white;
+    margin: 0;
+    padding: 0;
+  }
   .receipt-root {
     background: white;
     padding: 0;
+    min-height: auto;
+    display: block;
   }
   .receipt-card {
     box-shadow: none;
-    max-width: none;
+    width: 72mm;
+    max-width: 72mm;
+    margin: 0 auto;
     border: none;
-    padding: 0;
+    padding: 4mm 2mm;
   }
   .no-print {
     display: none !important;
