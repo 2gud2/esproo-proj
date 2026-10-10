@@ -204,6 +204,8 @@ AS $$
 DECLARE
   s JSONB;
   r JSONB;
+  v_size_id UUID;
+  v_size_text TEXT;
 BEGIN
   -- 1. Replace sizes
   DELETE FROM menu_item_sizes WHERE menu_item_id = p_menu_item_id;
@@ -239,6 +241,20 @@ BEGIN
   IF p_rows IS NOT NULL AND jsonb_typeof(p_rows) = 'array' AND jsonb_array_length(p_rows) > 0 THEN
     FOR r IN SELECT * FROM jsonb_array_elements(p_rows)
     LOOP
+      v_size_text := NULLIF(r->>'size_id', '');
+      v_size_id := NULL;
+
+      IF v_size_text IS NOT NULL THEN
+        IF v_size_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+          v_size_id := v_size_text::UUID;
+        ELSE
+          SELECT id INTO v_size_id
+          FROM menu_item_sizes
+          WHERE menu_item_id = p_menu_item_id AND LOWER(name) = LOWER(v_size_text)
+          LIMIT 1;
+        END IF;
+      END IF;
+
       INSERT INTO menu_item_ingredients (
         id,
         menu_item_id,
@@ -253,7 +269,7 @@ BEGIN
         (r->>'ingredient_id')::UUID,
         (r->>'quantity_used')::NUMERIC,
         r->>'unit',
-        CASE WHEN (r->>'size_id') IS NOT NULL AND (r->>'size_id') <> '' THEN (r->>'size_id')::UUID ELSE NULL END,
+        v_size_id,
         COALESCE(r->>'usage_scope', 'always')
       );
     END LOOP;

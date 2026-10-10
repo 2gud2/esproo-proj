@@ -203,13 +203,13 @@ export default function RecipeEditor({
                     {hasSizes && (
                       <td>
                         <select
-                          value={row.size_id || ''}
+                          value={sizes.find(s => s.id === row.size_id || (s.name && (row.size_id || '').toLowerCase() === s.name.toLowerCase()))?.id || row.size_id || ''}
                           onChange={(e) => updateRow(idx, 'size_id', e.target.value ? e.target.value : null)}
                           className="recipe-select size-scope-select"
                         >
                           <option value="">All sizes</option>
                           {sizes.map((s) => (
-                            <option key={s.id || s.name} value={s.id || s.name}>
+                            <option key={s.id || s.name} value={s.id}>
                               {s.name}
                             </option>
                           ))}

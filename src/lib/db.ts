@@ -1183,23 +1183,35 @@ export async function saveMenuItemConfig(
         updated_at: data.updated_at,
       };
 
-      const sizesPayload = (sizes || []).map((s, idx) => ({
-        id: s.id || undefined,
-        name: s.name,
-        price: Number(s.price),
-        ingredient_multiplier: Number(s.ingredient_multiplier ?? 1),
-        sort_order: s.sort_order ?? idx,
-        is_default: Boolean(s.is_default),
-        is_active: s.is_active ?? true,
-      }));
+      const sizeMap = new Map<string, string>();
+      const sizesPayload = (sizes || []).map((s, idx) => {
+        const sizeId = s.id || crypto.randomUUID();
+        sizeMap.set(sizeId, sizeId);
+        if (s.name) sizeMap.set(s.name.trim().toLowerCase(), sizeId);
+        return {
+          id: sizeId,
+          name: s.name,
+          price: Number(s.price),
+          ingredient_multiplier: Number(s.ingredient_multiplier ?? 1),
+          sort_order: s.sort_order ?? idx,
+          is_default: Boolean(s.is_default),
+          is_active: s.is_active ?? true,
+        };
+      });
 
-      const rowsPayload = (recipeRows || []).map(r => ({
-        ingredient_id: r.ingredient_id,
-        quantity_used: Number(r.quantity_used),
-        unit: r.unit,
-        size_id: r.size_id || null,
-        usage_scope: r.usage_scope || 'always',
-      }));
+      const rowsPayload = (recipeRows || []).map(r => {
+        let sizeId: string | null = null;
+        if (r.size_id) {
+          sizeId = sizeMap.get(r.size_id.toLowerCase()) || (r.size_id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) ? r.size_id : null);
+        }
+        return {
+          ingredient_id: r.ingredient_id,
+          quantity_used: Number(r.quantity_used),
+          unit: r.unit,
+          size_id: sizeId,
+          usage_scope: r.usage_scope || 'always',
+        };
+      });
 
       const { error: configError } = await supabase.rpc('save_menu_item_config', {
         p_menu_item_id: savedItem.id,
@@ -1207,7 +1219,41 @@ export async function saveMenuItemConfig(
         p_rows: rowsPayload,
       });
 
-      if (configError) throw new Error(configError.message);
+      if (configError) {
+        console.warn('save_menu_item_config RPC error, attempting direct table fallback:', configError.message);
+        // Fallback: Direct table operations
+        await supabase.from('menu_item_sizes').delete().eq('menu_item_id', savedItem.id);
+        if (sizesPayload.length > 0) {
+          const { error: sizeInsertErr } = await supabase.from('menu_item_sizes').insert(
+            sizesPayload.map(s => ({
+              id: s.id,
+              menu_item_id: savedItem!.id,
+              name: s.name,
+              price: s.price,
+              ingredient_multiplier: s.ingredient_multiplier,
+              sort_order: s.sort_order,
+              is_default: s.is_default,
+              is_active: s.is_active,
+            }))
+          );
+          if (sizeInsertErr) throw new Error(sizeInsertErr.message);
+        }
+
+        await supabase.from('menu_item_ingredients').delete().eq('menu_item_id', savedItem.id);
+        if (rowsPayload.length > 0) {
+          const { error: rowInsertErr } = await supabase.from('menu_item_ingredients').insert(
+            rowsPayload.map(r => ({
+              menu_item_id: savedItem!.id,
+              ingredient_id: r.ingredient_id,
+              quantity_used: r.quantity_used,
+              unit: r.unit,
+              size_id: r.size_id,
+              usage_scope: r.usage_scope,
+            }))
+          );
+          if (rowInsertErr) throw new Error(rowInsertErr.message);
+        }
+      }
     }
   } else {
     // Local-only mode

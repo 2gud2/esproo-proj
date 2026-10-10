@@ -462,28 +462,42 @@ export default function MenuPage() {
 
       let defaultPrice = Number(form.price) || 0;
       let formattedSizes: any[] | undefined = undefined;
+      const sizeNameToIdMap = new Map<string, string>();
 
       if (hasSizes) {
         const defaultSize = sizes.find((s) => s.is_default) || sizes[0];
         defaultPrice = Number(defaultSize.price);
-        formattedSizes = sizes.map((s, idx) => ({
-          id: s.id,
-          name: s.name.trim(),
-          price: Number(s.price),
-          ingredient_multiplier: Number(s.ingredient_multiplier) || 1,
-          sort_order: s.sort_order ?? idx,
-          is_default: Boolean(s.is_default),
-          is_active: s.is_active ?? true,
-        }));
+        formattedSizes = sizes.map((s, idx) => {
+          const sizeId = s.id || crypto.randomUUID();
+          sizeNameToIdMap.set(sizeId, sizeId);
+          if (s.name) {
+            sizeNameToIdMap.set(s.name.trim().toLowerCase(), sizeId);
+          }
+          return {
+            id: sizeId,
+            name: s.name.trim(),
+            price: Number(s.price),
+            ingredient_multiplier: Number(s.ingredient_multiplier) || 1,
+            sort_order: s.sort_order ?? idx,
+            is_default: Boolean(s.is_default),
+            is_active: s.is_active ?? true,
+          };
+        });
       }
 
-      const formattedRows = recipeRows.map((r) => ({
-        ingredient_id: r.ingredient_id,
-        quantity_used: Number(r.quantity_used),
-        unit: r.unit,
-        size_id: hasSizes ? (r.size_id || null) : null,
-        usage_scope: r.usage_scope || 'always',
-      }));
+      const formattedRows = recipeRows.map((r) => {
+        let resolvedSizeId: string | null = null;
+        if (hasSizes && r.size_id) {
+          resolvedSizeId = sizeNameToIdMap.get(r.size_id.toLowerCase()) || (r.size_id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) ? r.size_id : null);
+        }
+        return {
+          ingredient_id: r.ingredient_id,
+          quantity_used: Number(r.quantity_used),
+          unit: r.unit,
+          size_id: resolvedSizeId,
+          usage_scope: r.usage_scope || 'always',
+        };
+      });
 
       await saveMenuItemConfig(
         {

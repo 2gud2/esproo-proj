@@ -31,6 +31,7 @@ export default function SizesEditor({
     if (enabled && sizes.length === 0) {
       onChangeSizes([
         {
+          id: crypto.randomUUID(),
           name: 'Regular',
           price: '',
           ingredient_multiplier: '1.0',
@@ -38,6 +39,7 @@ export default function SizesEditor({
           is_default: true,
         },
         {
+          id: crypto.randomUUID(),
           name: 'Large',
           price: '',
           ingredient_multiplier: '1.5',
@@ -54,6 +56,7 @@ export default function SizesEditor({
     onChangeSizes([
       ...sizes,
       {
+        id: crypto.randomUUID(),
         name: `Size ${sizes.length + 1}`,
         price: '',
         ingredient_multiplier: '1.0',
@@ -123,6 +126,7 @@ export default function SizesEditor({
                     onChangeSizes([
                       ...sizes,
                       {
+                        id: crypto.randomUUID(),
                         name: chip,
                         price: '',
                         ingredient_multiplier: chip.toLowerCase().includes('large') ? '1.5' : '1.0',
