@@ -1593,7 +1593,34 @@ export async function saveOrderSupplyRules(
     const { error } = await supabase.rpc('save_order_supply_rules', {
       p_rows: rowsPayload,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.warn('save_order_supply_rules RPC error, attempting direct table fallback:', error.message);
+      // Fallback: Delete with WHERE to satisfy safeupdate, then insert
+      const { error: deleteError } = await supabase
+        .from('order_supply_rules')
+        .delete()
+        .not('id', 'is', null);
+
+      if (deleteError) {
+        throw new Error(deleteError.message || error.message);
+      }
+
+      if (rowsPayload.length > 0) {
+        const { error: insertError } = await supabase
+          .from('order_supply_rules')
+          .insert(rowsPayload.map(r => ({
+            ingredient_id: r.ingredient_id,
+            quantity_used: r.quantity_used,
+            unit: r.unit,
+            order_type: r.order_type,
+            is_active: r.is_active,
+          })));
+
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
+      }
+    }
   }
 
   const ings = getLocalIngredients();

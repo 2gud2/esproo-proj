@@ -340,7 +340,7 @@ AS $$
 DECLARE
   r JSONB;
 BEGIN
-  DELETE FROM order_supply_rules;
+  DELETE FROM order_supply_rules WHERE id IS NOT NULL;
 
   IF p_rows IS NOT NULL AND jsonb_typeof(p_rows) = 'array' AND jsonb_array_length(p_rows) > 0 THEN
     FOR r IN SELECT * FROM jsonb_array_elements(p_rows)

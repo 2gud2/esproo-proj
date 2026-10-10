@@ -1,14 +1,14 @@
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Edit2, X, Trash2, Calendar,
-  Clock, AlertTriangle, AlertCircle, ChevronDown, ChevronRight,
+  AlertTriangle, ChevronDown, ChevronRight,
   PackagePlus, Layers, CheckCircle, Package, Utensils
 } from 'lucide-react';
 import Sidebar from '../components/Layout/Sidebar';
 import TopBar from '../components/Layout/TopBar';
 import Pagination from '../components/Common/Pagination';
-import type { Ingredient, IngredientBatch, Sale } from '../lib/mockData';
+import type { Ingredient, IngredientBatch } from '../lib/mockData';
 import {
   loadIngredients,
   saveIngredient,
@@ -17,8 +17,7 @@ import {
   loadBatches,
   restockIngredient,
   updateBatch,
-  expireBatches,
-  loadSales
+  expireBatches
 } from '../lib/db';
 import { isOutOfStock, isLowStock, getExpirationInfo, type ExpirationInfo } from '../lib/stockStatus';
 import toast from 'react-hot-toast';
@@ -48,7 +47,6 @@ export const COFFEE_SHOP_UNITS = [
   { label: 'Other (Custom Unit)', value: 'Other', display: 'Custom' },
 ];
 
-type Timeframe = 'since_restock' | 'today' | 'this_week' | 'this_month' | 'all_time' | 'custom';
 type ItemTypeFilter = 'all' | 'ingredient' | 'supply';
 
 const defaultForm = {
@@ -80,16 +78,10 @@ const defaultEditBatchForm = {
 export default function InventoryPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [batches, setBatches] = useState<IngredientBatch[]>([]);
-  const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<ItemTypeFilter>('all');
   const [page, setPage] = useState(1);
-
-  // Time frame selector state (Default: 'since_restock')
-  const [timeframe, setTimeframe] = useState<Timeframe>('since_restock');
-  const [customStart, setCustomStart] = useState('');
-  const [customEnd, setCustomEnd] = useState('');
 
   // Expanded rows for batch breakdown
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -121,14 +113,12 @@ export default function InventoryPage() {
   async function fetchData() {
     try {
       setLoading(true);
-      const [ings, salesData, batchData] = await Promise.all([
+      const [ings, batchData] = await Promise.all([
         loadIngredients(),
-        loadSales(),
         loadBatches()
       ]);
 
       setIngredients(ings);
-      setSales(salesData);
       setBatches(batchData);
 
       // Call expireBatches() on page load to auto-write-off expired batches
@@ -167,69 +157,6 @@ export default function InventoryPage() {
       return next;
     });
   }
-
-  // Calculate usage per ingredient in timeframe from recorded sale deductions & order deductions
-  const usageMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    if (timeframe === 'since_restock') return map;
-
-    const now = new Date();
-    let startTime: number | null = null;
-    let endTime: number | null = null;
-
-    if (timeframe === 'today') {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      startTime = d.getTime();
-    } else if (timeframe === 'this_week') {
-      const d = new Date();
-      const day = d.getDay();
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-      const monday = new Date(d.setDate(diff));
-      monday.setHours(0, 0, 0, 0);
-      startTime = monday.getTime();
-    } else if (timeframe === 'this_month') {
-      const d = new Date(now.getFullYear(), now.getMonth(), 1);
-      startTime = d.getTime();
-    } else if (timeframe === 'custom') {
-      if (!customStart || !customEnd) return map;
-      startTime = new Date(customStart + 'T00:00:00').getTime();
-      endTime = new Date(customEnd + 'T23:59:59.999').getTime();
-    }
-
-    const filteredSales = sales.filter(s => {
-      if (s.status !== 'completed') return false;
-      const saleTime = new Date(s.createdAt).getTime();
-      if (startTime && saleTime < startTime) return false;
-      if (endTime && saleTime > endTime) return false;
-      return true;
-    });
-
-    for (const sale of filteredSales) {
-      // 1. Line item deductions (recipes, size variations, add-ons)
-      for (const item of (sale.items || [])) {
-        const itemDeductions = (item as any).deductions;
-        if (Array.isArray(itemDeductions)) {
-          for (const d of itemDeductions) {
-            if (d && d.ingredient_id && typeof d.quantity === 'number') {
-              map[d.ingredient_id] = (map[d.ingredient_id] || 0) + d.quantity;
-            }
-          }
-        }
-      }
-      // 2. Order-level deductions (takeout packaging / order supplies)
-      const orderDeductions = (sale as any).orderDeductions || (sale as any).order_deductions;
-      if (Array.isArray(orderDeductions)) {
-        for (const d of orderDeductions) {
-          if (d && d.ingredient_id && typeof d.quantity === 'number') {
-            map[d.ingredient_id] = (map[d.ingredient_id] || 0) + d.quantity;
-          }
-        }
-      }
-    }
-
-    return map;
-  }, [sales, timeframe, customStart, customEnd]);
 
   // Group batches by ingredient
   const batchesByIngredient = useMemo(() => {
@@ -548,12 +475,12 @@ export default function InventoryPage() {
 
           {/* Master List Card */}
           <div className="card">
-            {/* Header with Title, Filter Tabs and Timeframe Selector */}
+            {/* Header with Title and Filter Tabs */}
             <div className="card-pad" style={{ borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>INVENTORY MASTER LIST</h3>
                 <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  FEFO batch tracking, real-time consumption, and expiration monitoring
+
                 </p>
               </div>
 
@@ -584,78 +511,7 @@ export default function InventoryPage() {
                   <span className="type-tab-count">{supplyCount}</span>
                 </button>
               </div>
-
-              {/* Time Frame Selector */}
-              <div className="timeframe-bar">
-                <span className="timeframe-label">
-                  <Clock size={13} /> Timeframe:
-                </span>
-                <button
-                  className={`timeframe-btn ${timeframe === 'since_restock' ? 'active' : ''}`}
-                  onClick={() => setTimeframe('since_restock')}
-                  title="Show consumption from the active batch since last restock"
-                >
-                  Since Restock
-                </button>
-                <button
-                  className={`timeframe-btn ${timeframe === 'today' ? 'active' : ''}`}
-                  onClick={() => setTimeframe('today')}
-                >
-                  Today
-                </button>
-                <button
-                  className={`timeframe-btn ${timeframe === 'this_week' ? 'active' : ''}`}
-                  onClick={() => setTimeframe('this_week')}
-                >
-                  This Week
-                </button>
-                <button
-                  className={`timeframe-btn ${timeframe === 'this_month' ? 'active' : ''}`}
-                  onClick={() => setTimeframe('this_month')}
-                >
-                  This Month
-                </button>
-                <button
-                  className={`timeframe-btn ${timeframe === 'all_time' ? 'active' : ''}`}
-                  onClick={() => setTimeframe('all_time')}
-                >
-                  All Time
-                </button>
-                <button
-                  className={`timeframe-btn ${timeframe === 'custom' ? 'active' : ''}`}
-                  onClick={() => setTimeframe('custom')}
-                >
-                  Custom
-                </button>
-              </div>
             </div>
-
-            {/* Custom Date Range Bar (if selected) */}
-            {timeframe === 'custom' && (
-              <div style={{ padding: '10px 16px', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Custom Range:</span>
-                <input
-                  type="date"
-                  className="input"
-                  style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8rem' }}
-                  value={customStart}
-                  onChange={e => setCustomStart(e.target.value)}
-                />
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>to</span>
-                <input
-                  type="date"
-                  className="input"
-                  style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8rem' }}
-                  value={customEnd}
-                  onChange={e => setCustomEnd(e.target.value)}
-                />
-                {(!customStart || !customEnd) && (
-                  <span style={{ fontSize: '0.78rem', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <AlertCircle size={13} /> Select both start and end dates to calculate usage
-                  </span>
-                )}
-              </div>
-            )}
 
             {/* Table */}
             <div className="table-wrap">
@@ -667,7 +523,7 @@ export default function InventoryPage() {
                 <table className="table">
                   <thead>
                     <tr>
-                      <th style={{ width: 36 }}></th>
+                      <th style={{ width: 44, textAlign: 'center' }}></th>
                       <th>Item</th>
                       <th>Stock Period</th>
                       <th>Current Stock</th>
@@ -685,21 +541,16 @@ export default function InventoryPage() {
                       const isExpanded = expandedRows.has(i.id);
                       const isSupply = i.item_type === 'supply';
 
-                      // Calculate Current Stock and Used based on timeframe
+                      // Calculate Current Stock and Used from active batch (or item total)
                       let currentStockVal: number;
                       let usedQty: number;
 
-                      if (timeframe === 'since_restock') {
-                        if (activeBatch) {
-                          currentStockVal = activeBatch.quantity_received;
-                          usedQty = Math.max(0, activeBatch.quantity_received - activeBatch.quantity_remaining);
-                        } else {
-                          currentStockVal = i.stock_quantity;
-                          usedQty = 0;
-                        }
+                      if (activeBatch) {
+                        currentStockVal = activeBatch.quantity_received;
+                        usedQty = Math.max(0, activeBatch.quantity_received - activeBatch.quantity_remaining);
                       } else {
-                        usedQty = usageMap[i.id] || 0;
-                        currentStockVal = i.stock_quantity + usedQty;
+                        currentStockVal = i.stock_quantity;
+                        usedQty = 0;
                       }
 
                       // Expiration info for active batch or ingredient
@@ -712,26 +563,25 @@ export default function InventoryPage() {
                       const displayUnitName = unitDef ? unitDef.display : i.unit;
 
                       return (
-                        <tr key={i.id} className={isExpanded ? 'parent-row-expanded' : ''}>
-                          <td colSpan={9} style={{ padding: 0, borderBottom: 'none' }}>
-                            <div className="main-row-content">
-                              {/* Expand Chevron */}
-                              <div style={{ width: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <button
-                                  className={`batch-expand-btn ${isExpanded ? 'expanded' : ''}`}
-                                  onClick={() => toggleRowExpanded(i.id)}
-                                  title={isExpanded ? 'Hide batch breakdown' : 'Show batch breakdown'}
-                                >
-                                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                                </button>
-                              </div>
+                        <Fragment key={i.id}>
+                          <tr className={isExpanded ? 'parent-row-expanded' : ''}>
+                            {/* Expand Chevron */}
+                            <td style={{ textAlign: 'center', width: 44, padding: '10px 8px' }}>
+                              <button
+                                type="button"
+                                className={`batch-expand-btn ${isExpanded ? 'expanded' : ''}`}
+                                onClick={() => toggleRowExpanded(i.id)}
+                                title={isExpanded ? 'Hide batch breakdown' : 'Show batch breakdown'}
+                              >
+                                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                              </button>
+                            </td>
 
-                              {/* Item Name, Type Badge & Unit */}
-                              <div style={{ flex: '1.4', minWidth: 160, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                                    {i.name}
-                                  </span>
+                            {/* Item Name, Type Badge & Unit */}
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 140 }}>
+                                <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                                  {i.name}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                   <span className={`badge ${isSupply ? 'badge-info' : 'badge-neutral'}`} style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
@@ -747,9 +597,11 @@ export default function InventoryPage() {
                                   )}
                                 </div>
                               </div>
+                            </td>
 
-                              {/* Stock Period (<received> → <expiry>) */}
-                              <div style={{ flex: '1.6', minWidth: 180, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {/* Stock Period (<received> → <expiry>) */}
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 150 }}>
                                 {activeBatch ? (
                                   <>
                                     <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
@@ -771,36 +623,38 @@ export default function InventoryPage() {
                                   </span>
                                 )}
                               </div>
+                            </td>
 
-                              {/* Current Stock */}
-                              <div style={{ flex: '1.1', minWidth: 100, fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>
-                                {Number.isInteger(currentStockVal) ? currentStockVal : parseFloat(currentStockVal.toFixed(3))} {i.unit}
-                              </div>
+                            {/* Current Stock */}
+                            <td style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', whiteSpace: 'nowrap' }}>
+                              {Number.isInteger(currentStockVal) ? currentStockVal : parseFloat(currentStockVal.toFixed(3))} {i.unit}
+                            </td>
 
-                              {/* Used */}
-                              <div style={{ flex: '1', minWidth: 90, color: usedQty > 0 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: usedQty > 0 ? 700 : 400, fontSize: '0.875rem' }}>
-                                {Number.isInteger(usedQty) ? usedQty : parseFloat(usedQty.toFixed(3))} {i.unit}
-                              </div>
+                            {/* Used */}
+                            <td style={{ color: usedQty > 0 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: usedQty > 0 ? 700 : 400, fontSize: '0.875rem', whiteSpace: 'nowrap' }}>
+                              {Number.isInteger(usedQty) ? usedQty : parseFloat(usedQty.toFixed(3))} {i.unit}
+                            </td>
 
-                              {/* Remaining Stock */}
-                              <div style={{ flex: '1.2', minWidth: 110, fontWeight: 800, color: isOutOfStock(i) || isLowStock(i) ? 'var(--danger)' : 'var(--text-primary)', fontSize: '0.9rem' }}>
-                                {Number.isInteger(i.stock_quantity) ? i.stock_quantity : parseFloat(i.stock_quantity.toFixed(3))} {i.unit}
-                              </div>
+                            {/* Remaining Stock */}
+                            <td style={{ fontWeight: 800, color: isOutOfStock(i) || isLowStock(i) ? 'var(--danger)' : 'var(--text-primary)', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
+                              {Number.isInteger(i.stock_quantity) ? i.stock_quantity : parseFloat(i.stock_quantity.toFixed(3))} {i.unit}
+                            </td>
 
-                              {/* Low-Stock Threshold */}
-                              <div style={{ flex: '0.9', minWidth: 85, color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
-                                {i.low_stock_threshold} {i.unit}
-                              </div>
+                            {/* Low-Stock Threshold */}
+                            <td style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
+                              {i.low_stock_threshold} {i.unit}
+                            </td>
 
-                              {/* Status */}
-                              <div style={{ flex: '1', minWidth: 100 }}>
-                                <span className={`badge ${statusObj.badgeClass}`}>
-                                  ● {statusObj.label}
-                                </span>
-                              </div>
+                            {/* Status */}
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <span className={`badge ${statusObj.badgeClass}`}>
+                                ● {statusObj.label}
+                              </span>
+                            </td>
 
-                              {/* Actions */}
-                              <div style={{ flex: '1.4', minWidth: 140, display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                            {/* Actions */}
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              <div style={{ display: 'inline-flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                                 <button
                                   className="btn btn-sm btn-primary"
                                   style={{ padding: '4px 8px', fontSize: '0.75rem', gap: 4 }}
@@ -837,11 +691,13 @@ export default function InventoryPage() {
                                   <Trash2 size={14} />
                                 </button>
                               </div>
-                            </div>
+                            </td>
+                          </tr>
 
-                            {/* Expandable Batch Breakdown Table */}
-                            <AnimatePresence>
-                              {isExpanded && (
+                          {/* Expandable Batch Breakdown Table */}
+                          {isExpanded && (
+                            <tr className="batch-breakdown-row">
+                              <td colSpan={9} style={{ padding: 0, borderBottom: '1px solid var(--border)' }}>
                                 <motion.div
                                   className="batch-breakdown-panel"
                                   initial={{ opacity: 0, height: 0 }}
@@ -939,10 +795,10 @@ export default function InventoryPage() {
                                     )}
                                   </div>
                                 </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </td>
-                        </tr>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       );
                     })}
                   </tbody>
