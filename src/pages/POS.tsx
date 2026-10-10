@@ -10,7 +10,7 @@ import TopBar from '../components/Layout/TopBar';
 import { MENU_CATEGORIES } from '../lib/mockData';
 import type { MenuItem, MenuCartItem } from '../lib/mockData';
 import { useAuth } from '../contexts/AuthContext';
-import { loadMenuItems, createSaleWithDeduction } from '../lib/db';
+import { loadMenuItems, createSaleWithDeduction, loadCategories } from '../lib/db';
 import toast from 'react-hot-toast';
 import './POS.css';
 
@@ -19,6 +19,7 @@ type DiscountType = 'fixed' | 'percent';
 
 export default function POSPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
@@ -36,8 +37,12 @@ export default function POSPage() {
   useEffect(() => {
     async function initMenu() {
       try {
-        const data = await loadMenuItems(true); // active only
+        const [data, cats] = await Promise.all([
+          loadMenuItems(true),
+          loadCategories(),
+        ]);
         setMenuItems(data);
+        setCategories(cats.filter(c => c !== 'Condiments'));
       } catch (err) {
         console.error(err);
       } finally {
@@ -46,6 +51,11 @@ export default function POSPage() {
     }
     initMenu();
   }, []);
+
+  const allCategories = useMemo(() => {
+    const list = Array.from(new Set([...categories, ...menuItems.map(m => m.category).filter(Boolean)])).filter(c => c !== 'Condiments');
+    return ['All', ...list];
+  }, [categories, menuItems]);
 
   const filteredItems = useMemo(() => menuItems.filter(item => {
     const matchCat = category === 'All' || item.category === category;
@@ -90,7 +100,7 @@ export default function POSPage() {
 
   async function completeSale() {
     if (cart.length === 0) { toast.error('Cart is empty'); return; }
-    if (payment === 'gcash' && !gcashConfirmed) { toast.error('Please confirm GCash payment received'); return; }
+    if (payment === 'gcash' && !gcashConfirmed) { toast.error('Please confirm Digital Payment received'); return; }
     setCompleting(true);
     
     const saleId = `S-${Date.now()}`;
@@ -152,7 +162,7 @@ export default function POSPage() {
           <div className="pos-products">
             {/* Category chips */}
             <div className="pos-cats">
-              {['All', ...MENU_CATEGORIES].map(cat => (
+              {allCategories.map(cat => (
                 <button key={cat} className={`cat-chip${category === cat ? ' active' : ''}`} onClick={() => setCategory(cat)}>
                   {cat}
                 </button>
@@ -258,16 +268,16 @@ export default function POSPage() {
                   <Banknote size={16} /> Cash
                 </button>
                 <button className={`payment-btn${payment === 'gcash' ? ' active' : ''}`} onClick={() => setPayment('gcash')}>
-                  <CreditCard size={16} /> GCash/Maya
+                  <CreditCard size={16} /> DIGITAL PAYMENT
                 </button>
               </div>
               {payment === 'gcash' && (
                 <motion.div className="gcash-note" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
                   <AlertTriangle size={14} color="var(--warning)" />
-                  <span>Customer pays via QR code at the counter.</span>
+                  <span>Customer pays via Digital Payment (GCash/Maya/QR).</span>
                   <label className="gcash-check">
                     <input type="checkbox" checked={gcashConfirmed} onChange={e => setGcashConfirmed(e.target.checked)} />
-                    Payment Received
+                    I confirm Digital Payment received
                   </label>
                 </motion.div>
               )}

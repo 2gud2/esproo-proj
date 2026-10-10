@@ -1,11 +1,11 @@
 .expenses-layout {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 340px 1fr;
   gap: 20px;
   align-items: flex-start;
 }
 
-.expense-form-card { position: sticky; top: calc(var(--topbar-height) + 24px); }
+.expense-form-card { }
 .expense-history-card { min-height: 400px; }
 
 .expense-filters {

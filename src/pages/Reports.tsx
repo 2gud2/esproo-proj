@@ -1,24 +1,32 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, BarChart3, DollarSign, Package, Receipt, X, RotateCcw, Inbox } from 'lucide-react';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend, CartesianGrid
-} from 'recharts';
+  Download, BarChart3, DollarSign, Package, Receipt,
+  X, RotateCcw, Inbox, UtensilsCrossed, TrendingUp, TrendingDown,
+  Layers, CheckCircle2
+} from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import Sidebar from '../components/Layout/Sidebar';
 import TopBar from '../components/Layout/TopBar';
 import Pagination from '../components/Common/Pagination';
 import { useAuth } from '../contexts/AuthContext';
-import type { Sale, Ingredient, Expense } from '../lib/mockData';
-import { loadIngredients, loadSales, loadExpenses, voidSaleWithRestoration, refundSaleNoRestoration } from '../lib/db';
-import { format, subDays } from 'date-fns';
+import type { Sale, Ingredient, Expense, MenuItem, MenuItemIngredient } from '../lib/mockData';
+import {
+  loadIngredients,
+  loadSales,
+  loadExpenses,
+  loadMenuItems,
+  loadMenuItemRecipe,
+  voidSaleWithRestoration,
+  refundSaleNoRestoration
+} from '../lib/db';
+import { calculateIngredientCost } from '../lib/unitConversion';
+import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import './Reports.css';
 
 type Tab = 'sales' | 'expenses' | 'profit' | 'inventory';
 
-const COLORS = ['#943A1F', '#B84C2A', '#D4856A', '#E8B49A', '#7A2F18', '#4A1C0E', '#2B1008'];
 const PAGE_SIZE = 20;
 
 export default function ReportsPage() {
@@ -31,16 +39,17 @@ export default function ReportsPage() {
 
   // Pagination states
   const [salesPage, setSalesPage] = useState(1);
-  const [expensesPage, setExpensesPage] = useState(1);
   const [inventoryPage, setInventoryPage] = useState(1);
   
   // State for reports data
   const [sales, setSales] = useState<Sale[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [recipesByMenuId, setRecipesByMenuId] = useState<Record<string, MenuItemIngredient[]>>({});
   const [loadingData, setLoadingData] = useState(true);
 
-  // Void modal state
+  // Void/Refund modal state
   const [voidModal, setVoidModal] = useState(false);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [voidType, setVoidType] = useState<'voided' | 'refunded'>('voided');
@@ -50,14 +59,26 @@ export default function ReportsPage() {
   async function fetchReportsData() {
     setLoadingData(true);
     try {
-      const [salesData, ingredientsData, expensesData] = await Promise.all([
+      const [salesData, ingredientsData, expensesData, menuItemsData] = await Promise.all([
         loadSales(),
         loadIngredients(),
-        loadExpenses()
+        loadExpenses(),
+        loadMenuItems(false)
       ]);
       setSales(salesData);
       setIngredients(ingredientsData);
       setExpenses(expensesData);
+      setMenuItems(menuItemsData);
+
+      // Fetch recipes for all menu items to calculate accurate COGS
+      const recipeMap: Record<string, MenuItemIngredient[]> = {};
+      await Promise.all(
+        menuItemsData.map(async m => {
+          const rec = await loadMenuItemRecipe(m.id);
+          recipeMap[m.id] = rec;
+        })
+      );
+      setRecipesByMenuId(recipeMap);
     } catch (err) {
       console.error('Failed to load reports data:', err);
     } finally {
@@ -69,12 +90,11 @@ export default function ReportsPage() {
     fetchReportsData();
   }, []);
 
-  // Reset to page 1 whenever filters or active tab changes
+  // Reset page when filters change
   useEffect(() => { setSalesPage(1); }, [dateFrom, dateTo, statusFilter, tab]);
-  useEffect(() => { setExpensesPage(1); }, [dateFrom, dateTo, tab]);
   useEffect(() => { setInventoryPage(1); }, [tab]);
 
-  // Block employee accounts from viewing admin reports page
+  // Block employee accounts from viewing admin financial reports
   if (!authLoading && user && user.role !== 'admin') {
     return <Navigate to="/dashboard" replace />;
   }
@@ -101,68 +121,129 @@ export default function ReportsPage() {
   }, [expenses, dateFrom, dateTo]);
 
   // Paginated arrays
-  const totalSalesPages = Math.ceil(filteredSales.length / PAGE_SIZE);
+  const totalSalesPages = Math.ceil(filteredSales.length / PAGE_SIZE) || 1;
   const paginatedSales = useMemo(() => {
     return filteredSales.slice((salesPage - 1) * PAGE_SIZE, salesPage * PAGE_SIZE);
   }, [filteredSales, salesPage]);
 
-  const totalExpensesPages = Math.ceil(filteredExpenses.length / PAGE_SIZE);
-  const paginatedExpenses = useMemo(() => {
-    return filteredExpenses.slice((expensesPage - 1) * PAGE_SIZE, expensesPage * PAGE_SIZE);
-  }, [filteredExpenses, expensesPage]);
-
-  const totalInventoryPages = Math.ceil(ingredients.length / PAGE_SIZE);
+  const totalInventoryPages = Math.ceil(ingredients.length / PAGE_SIZE) || 1;
   const paginatedIngredients = useMemo(() => {
     return ingredients.slice((inventoryPage - 1) * PAGE_SIZE, inventoryPage * PAGE_SIZE);
   }, [ingredients, inventoryPage]);
 
-  // Dynamic calculation for expenses by category
-  const expenseByCategory = useMemo(() => {
-    const map = new Map<string, number>();
-    filteredExpenses.forEach(e => {
-      map.set(e.category, (map.get(e.category) || 0) + e.amount);
-    });
-    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [filteredExpenses]);
-
-  // Aggregate completed sales by day dynamically for last 7 days
-  const salesByDay = useMemo(() => {
-    const chart = Array.from({ length: 7 }, (_, i) => {
-      const d = subDays(new Date(), 6 - i);
-      return { day: format(d, 'EEE'), dateStr: d.toDateString(), sales: 0 };
-    });
-
-    filteredSales.forEach(s => {
-      if (s.status === 'completed') {
-        const sDate = new Date(s.createdAt).toDateString();
-        const dayMatch = chart.find(c => c.dateStr === sDate);
-        if (dayMatch) {
-          dayMatch.sales += s.total;
-        }
-      }
-    });
-
-    return chart.map(c => ({ day: c.day, sales: c.sales }));
-  }, [filteredSales]);
-
-  // Metrics within active date filter
-  const totalSalesInPeriod = useMemo(() => {
-    return filteredSales
-      .filter(s => s.status === 'completed')
-      .reduce((sum, s) => sum + s.total, 0);
-  }, [filteredSales]);
-
-  const totalExpensesInPeriod = useMemo(() => {
-    return filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
-  }, [filteredExpenses]);
-
-  const netProfit = totalSalesInPeriod - totalExpensesInPeriod;
-
-  // Helper to calculate total quantity of items in an order
+  // Helper to count item quantity in sale
   const getItemCount = (items: any[]) => {
     if (!Array.isArray(items)) return 0;
     return items.reduce((sum: number, item: any) => sum + Number(item.qty || 1), 0);
   };
+
+  // ════════════════════════════════════════════════════════════
+  // 1. SALES METRICS CALCULATIONS
+  // ════════════════════════════════════════════════════════════
+  const completedSalesInPeriod = useMemo(() => {
+    return filteredSales.filter(s => s.status === 'completed');
+  }, [filteredSales]);
+
+  // Gross Sales = Sum of (Subtotal or Total + Discount) for completed sales
+  const grossSales = useMemo(() => {
+    return completedSalesInPeriod.reduce((sum, s) => {
+      const subtotal = s.subtotal != null ? Number(s.subtotal) : (Number(s.total) + Number(s.discount || 0));
+      return sum + subtotal;
+    }, 0);
+  }, [completedSalesInPeriod]);
+
+  // Total Discounts for completed sales
+  const totalDiscounts = useMemo(() => {
+    return completedSalesInPeriod.reduce((sum, s) => sum + Number(s.discount || 0), 0);
+  }, [completedSalesInPeriod]);
+
+  // Net Sales = Gross Sales - Discounts
+  const netSales = grossSales - totalDiscounts;
+
+  // ════════════════════════════════════════════════════════════
+  // 2. COGS (COST OF GOODS SOLD) PER PRODUCT
+  // ════════════════════════════════════════════════════════════
+  const cogsBreakdown = useMemo(() => {
+    // Map of product/menu_item_id -> total qty sold in period
+    const qtySoldMap: Record<string, { name: string; qtySold: number; cogsPerServing: number; totalCogs: number }> = {};
+
+    // Calculate serving COGS for each menu item from its recipe
+    const itemCogsMap: Record<string, number> = {};
+    menuItems.forEach(item => {
+      const recipe = recipesByMenuId[item.id] || [];
+      const servingCost = recipe.reduce((acc, r) => {
+        const ing = ingredients.find(i => i.id === r.ingredient_id) || r.ingredient;
+        const lineCost = calculateIngredientCost(Number(r.quantity_used) || 0, r.unit || ing?.unit || 'pcs', ing);
+        return acc + lineCost;
+      }, 0);
+      itemCogsMap[item.id] = servingCost;
+    });
+
+    // Aggregate quantities from completed sales
+    completedSalesInPeriod.forEach(sale => {
+      (sale.items || []).forEach((item: any) => {
+        const id = item.menu_item_id || item.product?.id || item.id;
+        const name = item.name || item.product?.name || 'Unknown Item';
+        const qty = Number(item.qty || 1);
+        const cogsPerServing = itemCogsMap[id] || 0;
+
+        if (!qtySoldMap[id]) {
+          qtySoldMap[id] = {
+            name,
+            qtySold: 0,
+            cogsPerServing,
+            totalCogs: 0,
+          };
+        }
+        qtySoldMap[id].qtySold += qty;
+        qtySoldMap[id].totalCogs = qtySoldMap[id].qtySold * cogsPerServing;
+      });
+    });
+
+    return Object.values(qtySoldMap).filter(p => p.qtySold > 0);
+  }, [completedSalesInPeriod, menuItems, recipesByMenuId, ingredients]);
+
+  const totalCogs = useMemo(() => {
+    return cogsBreakdown.reduce((sum, item) => sum + item.totalCogs, 0);
+  }, [cogsBreakdown]);
+
+  // ════════════════════════════════════════════════════════════
+  // 3. OPERATING EXPENSES BY CATEGORY
+  // ════════════════════════════════════════════════════════════
+  const operatingExpensesByCategory = useMemo(() => {
+    const map: Record<string, number> = {};
+    filteredExpenses.forEach(e => {
+      map[e.category] = (map[e.category] || 0) + Number(e.amount || 0);
+    });
+    return Object.entries(map).map(([category, amount]) => ({
+      category,
+      amount,
+    }));
+  }, [filteredExpenses]);
+
+  const totalOperatingExpenses = useMemo(() => {
+    return filteredExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  }, [filteredExpenses]);
+
+  // ════════════════════════════════════════════════════════════
+  // 4. PROFIT & LOSS FORMULAS
+  // Net Sales = Gross Sales - Discounts
+  // Gross Profit = Net Sales - COGS
+  // Net Profit = Gross Profit - Operating Expenses
+  // ════════════════════════════════════════════════════════════
+  const grossProfit = netSales - totalCogs;
+  const netProfit = grossProfit - totalOperatingExpenses;
+  const isNetProfitPositive = netProfit >= 0;
+
+  // Number formatting helper
+  function formatAccountingNumber(val: number, isDeduction = false, withPeso = false): string {
+    const absVal = Math.abs(val);
+    const formatted = absVal.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (isDeduction) {
+      return withPeso ? `(₱${formatted})` : `(${formatted})`;
+    }
+    return withPeso ? `₱${formatted}` : formatted;
+  }
 
   // CSV Export for Sales Report
   function handleExportCSV() {
@@ -171,14 +252,17 @@ export default function ReportsPage() {
       return;
     }
 
-    const headers = ['Sale ID', 'Date', 'Cashier', 'Item Qty Count', 'Total (PHP)', 'Payment Method', 'Status', 'Reason'];
+    const headers = ['Sale ID', 'Date', 'Cashier', 'No. of Items', 'Subtotal (PHP)', 'Discount (PHP)', 'Refund (PHP)', 'Total (PHP)', 'Payment Method', 'Status', 'Reason'];
     const rows = filteredSales.map(s => [
       s.id,
       format(new Date(s.createdAt), 'yyyy-MM-dd HH:mm'),
       `"${s.cashierName}"`,
       getItemCount(s.items),
+      s.subtotal != null ? s.subtotal : s.total,
+      s.discount || 0,
+      s.status === 'refunded' ? s.total : 0,
       s.total,
-      s.paymentMethod,
+      s.paymentMethod === 'cash' ? 'Cash' : 'Digital Payment',
       s.status,
       `"${s.voidReason || ''}"`
     ]);
@@ -209,10 +293,10 @@ export default function ReportsPage() {
     try {
       if (voidType === 'voided') {
         await voidSaleWithRestoration(selectedSaleId, voidType, voidReason.trim());
-        toast.success('Sale voided successfully! Ingredient stock restored.');
+        toast.success('Sale voided successfully! Raw ingredient stock restored.');
       } else {
         await refundSaleNoRestoration(selectedSaleId, voidReason.trim());
-        toast.success('Sale refunded successfully! Ingredient stock remains deducted.');
+        toast.success('Sale refunded successfully! Stock remains deducted.');
       }
       setVoidModal(false);
       await fetchReportsData();
@@ -235,11 +319,11 @@ export default function ReportsPage() {
       <div className="app-layout">
         <Sidebar />
         <div className="main-content">
-          <TopBar title="Reports" />
+          <TopBar title="Financial Reports" />
           <main className="page-body">
             <div className="empty-state" style={{ padding: '100px 20px' }}>
               <div className="spinner" />
-              <p>Loading reports...</p>
+              <p>Loading financial reports...</p>
             </div>
           </main>
         </div>
@@ -251,9 +335,14 @@ export default function ReportsPage() {
     <div className="app-layout">
       <Sidebar />
       <div className="main-content">
-        <TopBar title="Reports" action={
-          <button className="btn btn-ghost" onClick={handleExportCSV}><Download size={15} /> Export CSV</button>
-        } />
+        <TopBar
+          title="Financial Reports"
+          action={
+            <button className="btn btn-ghost" onClick={handleExportCSV}>
+              <Download size={15} /> Export CSV
+            </button>
+          }
+        />
         <main className="page-body">
           {/* Date range & Filters */}
           <div className="reports-filters card card-pad" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
@@ -287,7 +376,7 @@ export default function ReportsPage() {
             )}
           </div>
 
-          {/* Tabs */}
+          {/* Navigation Tabs */}
           <div className="reports-tabs">
             {tabs.map(t => (
               <button key={t.key} className={`reports-tab${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
@@ -297,187 +386,340 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          <motion.div key={tab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-            {/* SALES */}
+          <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+            
+            {/* ════════════════════════════════════════════════════════════
+                TAB 1: SALES REPORTS (Immediate Transactions Table, No Graph)
+               ════════════════════════════════════════════════════════════ */}
             {tab === 'sales' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                <div className="card card-pad">
-                  <h3 style={{ marginBottom: 18 }}>Daily Sales Trend</h3>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={salesByDay} margin={{ top: 4, right: 4, left: -15, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                      <XAxis dataKey="day" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => `₱${v >= 1000 ? (v/1000).toFixed(0) + 'k' : v}`} />
-                      <Tooltip
-                        contentStyle={{ background: 'var(--secondary)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13 }}
-                        formatter={(v: any) => [`₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, 'Sales']}
-                      />
-                      <Bar dataKey="sales" fill="var(--primary)" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="card">
-                  <div className="card-pad" style={{ borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <h3>Transactions ({filteredSales.length})</h3>
-                    <span className="badge badge-neutral">Total: ₱{totalSalesInPeriod.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+              <div className="card">
+                <div className="card-pad" style={{ borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Sales Transactions ({filteredSales.length})</h3>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Complete ledger of sales, discounts, refunds, and receipts</p>
                   </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span className="badge badge-neutral">Gross Sales: ₱{grossSales.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                    <span className="badge badge-success">Discounts: -₱{totalDiscounts.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                    <span className="badge badge-primary" style={{ fontWeight: 700 }}>Net Sales: ₱{netSales.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
 
-                  {filteredSales.length === 0 ? (
-                    <div className="empty-state" style={{ padding: '50px 20px' }}>
-                      <Inbox size={32} />
-                      <p>No transactions found matching criteria.</p>
+                {filteredSales.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '50px 20px' }}>
+                    <Inbox size={32} />
+                    <p>No transactions found matching criteria.</p>
+                  </div>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Sale ID</th>
+                          <th>Date</th>
+                          <th>Cashier</th>
+                          <th>No. of Items</th>
+                          <th>Subtotal</th>
+                          <th>Discount</th>
+                          <th>Refund</th>
+                          <th>Total</th>
+                          <th>Status</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedSales.map(s => {
+                          const itemCount = getItemCount(s.items);
+                          const discountVal = Number(s.discount || 0);
+                          const subtotalVal = s.subtotal != null ? Number(s.subtotal) : (Number(s.total) + discountVal);
+                          const refundVal = s.status === 'refunded' ? Number(s.total) : 0;
+
+                          return (
+                            <tr key={s.id}>
+                              {/* Sale ID */}
+                              <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>{s.id}</td>
+
+                              {/* Date */}
+                              <td style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                {format(new Date(s.createdAt), 'MMM dd, h:mm a')}
+                              </td>
+
+                              {/* Cashier */}
+                              <td>{s.cashierName}</td>
+
+                              {/* No. of Items */}
+                              <td>{itemCount} item{itemCount === 1 ? '' : 's'}</td>
+
+                              {/* Subtotal */}
+                              <td style={{ fontWeight: 500 }}>
+                                ₱{subtotalVal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              </td>
+
+                              {/* Discount */}
+                              <td>
+                                {discountVal > 0 ? (
+                                  <span style={{ color: 'var(--danger)', fontWeight: 600 }}>
+                                    ₱{discountVal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)' }}>0</span>
+                                )}
+                              </td>
+
+                              {/* Refund */}
+                              <td>
+                                {refundVal > 0 ? (
+                                  <span style={{ color: 'var(--danger)', fontWeight: 600 }}>
+                                    ₱{refundVal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)' }}>0</span>
+                                )}
+                              </td>
+
+                              {/* Total */}
+                              <td style={{ fontWeight: 700, color: s.status === 'voided' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                ₱{Number(s.total).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              </td>
+
+                              {/* Status */}
+                              <td>
+                                <span className={`badge ${s.status === 'completed' ? 'badge-success' : s.status === 'voided' ? 'badge-danger' : 'badge-warning'}`}>
+                                  ● {s.status === 'completed' ? 'Completed' : s.status === 'voided' ? 'Voided' : 'Refunded'}
+                                </span>
+                              </td>
+
+                              {/* Actions */}
+                              <td style={{ textAlign: 'right' }}>
+                                {s.status === 'completed' ? (
+                                  <button
+                                    className="btn btn-sm btn-ghost"
+                                    style={{ color: 'var(--danger)', padding: '3px 8px', fontSize: '0.72rem' }}
+                                    onClick={() => handleVoidClick(s.id)}
+                                  >
+                                    Void / Refund
+                                  </button>
+                                ) : (
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'inline-block', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.voidReason}>
+                                    {s.voidReason || 'No reason specified'}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <Pagination
+                  currentPage={salesPage}
+                  totalPages={totalSalesPages}
+                  onPageChange={setSalesPage}
+                  totalItems={filteredSales.length}
+                  pageSize={PAGE_SIZE}
+                />
+              </div>
+            )}
+
+            {/* ════════════════════════════════════════════════════════════
+                TAB 2: EXPENSE REPORT (2 Sections: COGS and Operating Expenses)
+               ════════════════════════════════════════════════════════════ */}
+            {tab === 'expenses' && (
+              <div className="expense-sections-grid">
+                
+                {/* SECTION 1: COST OF GOODS SOLD (COGS) */}
+                <div className="card">
+                  <div className="report-section-header">
+                    <h3 className="report-section-title">
+                      <UtensilsCrossed size={16} color="var(--primary)" />
+                      SECTION 1: COST OF GOODS SOLD (COGS)
+                    </h3>
+                  </div>
+                  {cogsBreakdown.length === 0 ? (
+                    <div className="empty-state" style={{ padding: '40px 20px' }}>
+                      <p style={{ fontSize: '0.85rem' }}>No recipe items sold in selected period.</p>
                     </div>
                   ) : (
                     <div className="table-wrap">
                       <table className="table">
                         <thead>
                           <tr>
-                            <th>Sale ID</th>
-                            <th>Date</th>
-                            <th>Cashier</th>
-                            <th>Items</th>
-                            <th>Total</th>
-                            <th>Status</th>
-                            <th>Actions / Reason</th>
+                            <th>Product</th>
+                            <th style={{ textAlign: 'center' }}>Quantity Sold</th>
+                            <th style={{ textAlign: 'right' }}>COGS per Serving</th>
+                            <th style={{ textAlign: 'right' }}>Total COGS</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {paginatedSales.map(s => {
-                            const itemCount = getItemCount(s.items);
-                            return (
-                              <tr key={s.id}>
-                                <td style={{ fontWeight: 600 }}>{s.id}</td>
-                                <td style={{ color: 'var(--text-muted)' }}>{format(new Date(s.createdAt), 'MMM dd, hh:mm a')}</td>
-                                <td>{s.cashierName}</td>
-                                <td>{itemCount} item{itemCount === 1 ? '' : 's'}</td>
-                                <td style={{ fontWeight: 600 }}>₱{s.total.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
-                                <td>
-                                  <span className={`badge ${s.status === 'completed' ? 'badge-success' : s.status === 'voided' ? 'badge-danger' : 'badge-warning'}`}>
-                                    {s.status}
-                                  </span>
-                                </td>
-                                <td>
-                                  {s.status === 'completed' ? (
-                                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)', padding: '2px 8px', fontSize: '0.72rem' }} onClick={() => handleVoidClick(s.id)}>
-                                      Void/Refund
-                                    </button>
-                                  ) : (
-                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', maxWidth: 180 }} title={s.voidReason}>
-                                      {s.voidReason || 'No reason'}
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
+                          {cogsBreakdown.map((item, idx) => (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600 }}>{item.name}</td>
+                              <td style={{ textAlign: 'center' }}>{item.qtySold}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
+                                ₱{item.cogsPerServing.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                                ₱{item.totalCogs.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className="table-total-row">
+                            <td colSpan={3} style={{ fontWeight: 700 }}>Total COGS</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
+                              ₱{totalCogs.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
                         </tbody>
                       </table>
                     </div>
                   )}
-                  <Pagination
-                    currentPage={salesPage}
-                    totalPages={totalSalesPages}
-                    onPageChange={setSalesPage}
-                    totalItems={filteredSales.length}
-                    pageSize={PAGE_SIZE}
-                  />
                 </div>
-              </div>
-            )}
 
-            {/* EXPENSES */}
-            {tab === 'expenses' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }}>
+                {/* SECTION 2: OPERATING EXPENSES */}
                 <div className="card">
-                  <div className="card-pad" style={{ borderBottom: '1px solid var(--border)' }}>
-                    <h3>Expense Breakdown ({filteredExpenses.length})</h3>
+                  <div className="report-section-header">
+                    <h3 className="report-section-title">
+                      <Receipt size={16} color="var(--primary)" />
+                      SECTION 2: OPERATING EXPENSES
+                    </h3>
                   </div>
-                  {filteredExpenses.length === 0 ? (
-                    <div className="empty-state" style={{ padding: '50px 20px' }}>
-                      <Receipt size={32} />
-                      <p>No expenses recorded for selected date range.</p>
+                  {operatingExpensesByCategory.length === 0 ? (
+                    <div className="empty-state" style={{ padding: '40px 20px' }}>
+                      <p style={{ fontSize: '0.85rem' }}>No operating expenses recorded for selected period.</p>
                     </div>
                   ) : (
                     <div className="table-wrap">
                       <table className="table">
-                        <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr></thead>
+                        <thead>
+                          <tr>
+                            <th>Expense Category</th>
+                            <th style={{ textAlign: 'right' }}>Amount</th>
+                          </tr>
+                        </thead>
                         <tbody>
-                          {paginatedExpenses.map(e => (
-                            <tr key={e.id}>
-                              <td style={{ color: 'var(--text-muted)' }}>{format(new Date(e.date), 'MMM dd, yyyy')}</td>
-                              <td>{e.description}</td>
-                              <td><span className="badge badge-info">{e.category}</span></td>
-                              <td style={{ fontWeight: 700, color: 'var(--danger)' }}>₱{e.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+                          {operatingExpensesByCategory.map((cat, idx) => (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600 }}>{cat.category}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                                ₱{cat.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              </td>
                             </tr>
                           ))}
+                          <tr className="table-total-row">
+                            <td style={{ fontWeight: 700 }}>Total Operating Expenses</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
+                              ₱{totalOperatingExpenses.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
                         </tbody>
                       </table>
                     </div>
                   )}
-                  <Pagination
-                    currentPage={expensesPage}
-                    totalPages={totalExpensesPages}
-                    onPageChange={setExpensesPage}
-                    totalItems={filteredExpenses.length}
-                    pageSize={PAGE_SIZE}
-                  />
                 </div>
 
-                <div className="card card-pad">
-                  <h3 style={{ marginBottom: 16 }}>Expenses by Category</h3>
-                  {expenseByCategory.length === 0 ? (
-                    <div className="empty-state" style={{ padding: '40px 10px' }}>
-                      <p>No category breakdown available.</p>
-                    </div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height={240}>
-                      <PieChart>
-                        <Pie data={expenseByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} paddingAngle={3}>
-                          {expenseByCategory.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <Tooltip formatter={(v: any) => `₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} />
-                        <Legend wrapperStyle={{ fontSize: 12 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
               </div>
             )}
 
-            {/* PROFIT */}
+            {/* ════════════════════════════════════════════════════════════
+                TAB 3: PROFIT SUMMARY (Exact Statement of Profit & Loss Format)
+               ════════════════════════════════════════════════════════════ */}
             {tab === 'profit' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                <div className="stats-grid">
-                  <div className="card card-pad">
-                    <div className="stat-icon" style={{ background: 'var(--success-bg)', color: 'var(--success)', marginBottom: 12 }}><DollarSign size={20} /></div>
-                    <div className="stat-value" style={{ color: 'var(--success)' }}>₱{totalSalesInPeriod.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
-                    <div className="stat-label">Total Sales (Completed)</div>
-                    <div className="stat-sub">For selected period</div>
+              <div className="income-statement-card">
+                <div className="income-statement-header">
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>PROFIT SUMMARY</h3>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      Statement of Profit and Loss (Accounting Breakdown)
+                    </p>
                   </div>
-                  <div className="card card-pad">
-                    <div className="stat-icon" style={{ background: 'var(--danger-bg)', color: 'var(--danger)', marginBottom: 12 }}><Receipt size={20} /></div>
-                    <div className="stat-value" style={{ color: 'var(--danger)' }}>₱{totalExpensesInPeriod.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
-                    <div className="stat-label">Total Expenses</div>
-                    <div className="stat-sub">For selected period</div>
-                  </div>
-                  <div className="card card-pad">
-                    <div className="stat-icon" style={{ background: netProfit >= 0 ? 'var(--success-bg)' : 'var(--danger-bg)', color: netProfit >= 0 ? 'var(--success)' : 'var(--danger)', marginBottom: 12 }}>
-                      <BarChart3 size={20} />
-                    </div>
-                    <div className="stat-value" style={{ color: netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                      ₱{Math.abs(netProfit).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                    </div>
-                    <div className="stat-label">Net Profit (Sales - Expenses)</div>
-                    <div className="stat-sub">{netProfit >= 0 ? 'Net Profit ✓' : 'Net Loss'}</div>
-                  </div>
+                  <span className={`badge ${isNetProfitPositive ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.85rem', padding: '6px 12px' }}>
+                    {isNetProfitPositive ? '● Profitable Period' : '● Operating at Loss'}
+                  </span>
                 </div>
+
+                <table className="income-statement-table">
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', width: '65%' }}>DETAILS</th>
+                      <th style={{ textAlign: 'right', width: '35%' }}>AMOUNT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* GROSS SALES (First line has ₱ sign, Green) */}
+                    <tr>
+                      <td className="income-statement-row-label">GROSS SALES</td>
+                      <td className="income-statement-val val-positive">
+                        {formatAccountingNumber(grossSales, false, true)}
+                      </td>
+                    </tr>
+
+                    {/* LESS: DISCOUNT (Red, in parentheses, no ₱ sign) */}
+                    <tr>
+                      <td className="income-statement-row-label indent">LESS: DISCOUNT</td>
+                      <td className="income-statement-val val-negative">
+                        {formatAccountingNumber(totalDiscounts, true, false)}
+                      </td>
+                    </tr>
+
+                    {/* NET SALES (Subtotal, Green, no ₱ sign) */}
+                    <tr className="income-statement-subtotal-row">
+                      <td className="income-statement-row-label">NET SALES</td>
+                      <td className="income-statement-val val-positive">
+                        {formatAccountingNumber(netSales, false, false)}
+                      </td>
+                    </tr>
+
+                    {/* LESS: COST OF GOODS SOLD (Red, in parentheses, no ₱ sign) */}
+                    <tr>
+                      <td className="income-statement-row-label indent">LESS: COST OF GOODS SOLD</td>
+                      <td className="income-statement-val val-negative">
+                        {formatAccountingNumber(totalCogs, true, false)}
+                      </td>
+                    </tr>
+
+                    {/* GROSS PROFIT (Subtotal, Green, no ₱ sign) */}
+                    <tr className="income-statement-subtotal-row">
+                      <td className="income-statement-row-label">GROSS PROFIT</td>
+                      <td className="income-statement-val val-positive">
+                        {formatAccountingNumber(grossProfit, false, false)}
+                      </td>
+                    </tr>
+
+                    {/* LESS: OPERATING EXPENSES (Red, in parentheses, no ₱ sign) */}
+                    <tr>
+                      <td className="income-statement-row-label indent">LESS: OPERATING EXPENSES</td>
+                      <td className="income-statement-val val-negative">
+                        {formatAccountingNumber(totalOperatingExpenses, true, false)}
+                      </td>
+                    </tr>
+
+                    {/* FINAL ROW: NET PROFIT or NET LOSS (Has ₱ sign, double underline!) */}
+                    <tr className="income-statement-final-row">
+                      <td className="income-statement-row-label" style={{ fontSize: '1.05rem', fontWeight: 800 }}>
+                        {isNetProfitPositive ? 'NET PROFIT' : 'NET LOSS'}
+                      </td>
+                      <td className={`income-statement-val ${isNetProfitPositive ? 'val-positive' : 'val-negative'}`} style={{ fontSize: '1.15rem', fontWeight: 800 }}>
+                        <span className={`double-underline ${isNetProfitPositive ? '' : 'loss'}`}>
+                          {isNetProfitPositive
+                            ? formatAccountingNumber(netProfit, false, true)
+                            : formatAccountingNumber(netProfit, true, true)}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             )}
 
-            {/* INVENTORY */}
+            {/* ════════════════════════════════════════════════════════════
+                TAB 4: RAW INGREDIENTS REPORT
+               ════════════════════════════════════════════════════════════ */}
             {tab === 'inventory' && (
               <div className="card">
-                <div className="card-pad" style={{ borderBottom: '1px solid var(--border)' }}><h3>Raw Ingredients Stock Levels</h3></div>
+                <div className="card-pad" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Raw Ingredients Stock Levels</h3>
+                </div>
                 {ingredients.length === 0 ? (
                   <div className="empty-state" style={{ padding: '50px 20px' }}>
                     <Package size={32} />
@@ -486,7 +728,15 @@ export default function ReportsPage() {
                 ) : (
                   <div className="table-wrap">
                     <table className="table">
-                      <thead><tr><th>Ingredient</th><th>Unit</th><th>Current Stock</th><th>Low-Stock Threshold</th><th>Status</th></tr></thead>
+                      <thead>
+                        <tr>
+                          <th>Ingredient</th>
+                          <th>Unit</th>
+                          <th>Current Stock</th>
+                          <th>Low-Stock Threshold</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {paginatedIngredients.map(ing => {
                           const low = ing.stock_quantity <= ing.low_stock_threshold;
@@ -498,7 +748,7 @@ export default function ReportsPage() {
                               <td style={{ color: 'var(--text-muted)' }}>{ing.low_stock_threshold} {ing.unit}</td>
                               <td>
                                 <span className={`badge ${low ? 'badge-danger' : 'badge-success'}`}>
-                                  {low ? 'Low Stock' : 'OK'}
+                                  ● {low ? 'Low Stock' : 'OK'}
                                 </span>
                               </td>
                             </tr>
@@ -517,6 +767,7 @@ export default function ReportsPage() {
                 />
               </div>
             )}
+
           </motion.div>
         </main>
       </div>

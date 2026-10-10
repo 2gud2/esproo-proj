@@ -13,8 +13,8 @@ const navItems = [
   { to: '/pos', icon: ShoppingCart, label: 'POS' },
   { to: '/menu', icon: UtensilsCrossed, label: 'Menu', adminOnly: true },
   { to: '/inventory', icon: Package, label: 'Inventory' },
-  { to: '/expenses', icon: Receipt, label: 'Expenses' },
-  { to: '/reports', icon: BarChart3, label: 'Reports', adminOnly: true },
+  { to: '/expenses', icon: Receipt, label: 'Expenses Management' },
+  { to: '/reports', icon: BarChart3, label: 'Financial Reports', adminOnly: true },
   { to: '/users', icon: Users, label: 'Users', adminOnly: true },
 ];
 

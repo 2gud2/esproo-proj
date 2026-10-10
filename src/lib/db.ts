@@ -1,5 +1,26 @@
 import { supabase } from './supabase';
 import type { Product, Sale, Ingredient, MenuItem, MenuItemIngredient, MenuCartItem, Expense } from './mockData';
+import { convertUnitQuantity } from './unitConversion';
+
+export const DEFAULT_MENU_CATEGORIES = ['Beverages', 'Coffee', 'Food', 'Snacks', 'Dairy'];
+
+export async function loadCategories(): Promise<string[]> {
+  const saved = localStorage.getItem('espro_menu_categories');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.filter((c: string) => c !== 'Condiments');
+      }
+    } catch (_) {}
+  }
+  return DEFAULT_MENU_CATEGORIES;
+}
+
+export async function saveCategories(categories: string[]): Promise<void> {
+  const cleaned = Array.from(new Set(categories.filter(c => c && c.trim() && c !== 'Condiments')));
+  localStorage.setItem('espro_menu_categories', JSON.stringify(cleaned));
+}
 
 // ════════════════════════════════════════════════════════════
 // LEGACY: Products (kept for backward compat with old sales)
@@ -85,6 +106,9 @@ export async function loadIngredients(): Promise<Ingredient[]> {
         unit: i.unit,
         stock_quantity: Number(i.stock_quantity),
         low_stock_threshold: Number(i.low_stock_threshold),
+        cost_per_unit: i.cost_per_unit != null ? Number(i.cost_per_unit) : undefined,
+        expiration_date: i.expiration_date || null,
+        auto_deduct_expired: i.auto_deduct_expired ?? false,
         created_at: i.created_at,
         updated_at: i.updated_at,
       }));
@@ -102,14 +126,19 @@ export async function loadIngredients(): Promise<Ingredient[]> {
 
 export async function saveIngredient(ingredient: Partial<Ingredient> & { name: string; unit: string }): Promise<Ingredient> {
   const now = new Date().toISOString();
-  const payload = {
+  const payload: any = {
     id: ingredient.id || undefined,
     name: ingredient.name,
     unit: ingredient.unit,
     stock_quantity: ingredient.stock_quantity ?? 0,
     low_stock_threshold: ingredient.low_stock_threshold ?? 10,
+    expiration_date: ingredient.expiration_date ?? null,
+    auto_deduct_expired: ingredient.auto_deduct_expired ?? false,
     updated_at: now,
   };
+  if (ingredient.cost_per_unit !== undefined) {
+    payload.cost_per_unit = ingredient.cost_per_unit;
+  }
 
   try {
     const { data, error } = await supabase
@@ -124,6 +153,9 @@ export async function saveIngredient(ingredient: Partial<Ingredient> & { name: s
         unit: data.unit,
         stock_quantity: Number(data.stock_quantity),
         low_stock_threshold: Number(data.low_stock_threshold),
+        cost_per_unit: data.cost_per_unit != null ? Number(data.cost_per_unit) : undefined,
+        expiration_date: data.expiration_date || null,
+        auto_deduct_expired: data.auto_deduct_expired ?? false,
         created_at: data.created_at,
         updated_at: data.updated_at,
       };
@@ -138,6 +170,9 @@ export async function saveIngredient(ingredient: Partial<Ingredient> & { name: s
     unit: ingredient.unit,
     stock_quantity: ingredient.stock_quantity ?? 0,
     low_stock_threshold: ingredient.low_stock_threshold ?? 10,
+    cost_per_unit: ingredient.cost_per_unit,
+    expiration_date: ingredient.expiration_date || null,
+    auto_deduct_expired: ingredient.auto_deduct_expired ?? false,
     created_at: ingredient.created_at || now,
     updated_at: now,
   };
@@ -166,6 +201,15 @@ export async function adjustIngredientStock(
   else if (type === 'set') newStock = Math.max(0, quantity);
 
   await saveIngredient({ ...ingredient, stock_quantity: newStock });
+}
+
+export async function deleteIngredient(ingredientId: string): Promise<void> {
+  try {
+    await supabase.from('ingredients').delete().eq('id', ingredientId);
+  } catch (_) {}
+  const current = await loadIngredients();
+  const updated = current.filter(i => i.id !== ingredientId);
+  localStorage.setItem('espro_ingredients', JSON.stringify(updated));
 }
 
 
@@ -209,7 +253,7 @@ export async function loadMenuItemRecipe(menuItemId: string): Promise<MenuItemIn
       .select('*, ingredient:ingredients(*)')
       .eq('menu_item_id', menuItemId);
     if (!error && data) {
-      return data.map((row: any) => ({
+      const result = data.map((row: any) => ({
         id: row.id,
         menu_item_id: row.menu_item_id,
         ingredient_id: row.ingredient_id,
@@ -221,12 +265,32 @@ export async function loadMenuItemRecipe(menuItemId: string): Promise<MenuItemIn
           unit: row.ingredient.unit,
           stock_quantity: Number(row.ingredient.stock_quantity),
           low_stock_threshold: Number(row.ingredient.low_stock_threshold),
+          cost_per_unit: row.ingredient.cost_per_unit != null ? Number(row.ingredient.cost_per_unit) : undefined,
           created_at: row.ingredient.created_at,
           updated_at: row.ingredient.updated_at,
         } : undefined,
       }));
+      try {
+        localStorage.setItem(`espro_recipe_${menuItemId}`, JSON.stringify(result));
+      } catch (_) {}
+      return result;
     }
   } catch (_) {}
+
+  // Fallback to local storage
+  const localSaved = localStorage.getItem(`espro_recipe_${menuItemId}`);
+  if (localSaved) {
+    try {
+      const parsed = JSON.parse(localSaved);
+      // Enrich with current ingredients if available
+      const ingredients = await loadIngredients();
+      return parsed.map((r: any) => ({
+        ...r,
+        ingredient: r.ingredient || ingredients.find(i => i.id === r.ingredient_id),
+      }));
+    } catch (_) {}
+  }
+
   return [];
 }
 
@@ -305,6 +369,20 @@ export async function saveMenuItem(
       : [savedItem, ...current];
     localStorage.setItem('espro_menu_items_all', JSON.stringify(updated));
     localStorage.setItem('espro_menu_items_active', JSON.stringify(updated.filter(m => m.is_active)));
+  }
+
+  // Save recipe rows locally so recipe viewer and calculations always work
+  if (savedItem) {
+    const ingredients = await loadIngredients();
+    const recipeWithIngredients = recipeRows.map(r => ({
+      id: crypto.randomUUID(),
+      menu_item_id: savedItem!.id,
+      ingredient_id: r.ingredient_id,
+      quantity_used: r.quantity_used,
+      unit: r.unit,
+      ingredient: ingredients.find(i => i.id === r.ingredient_id),
+    }));
+    localStorage.setItem(`espro_recipe_${savedItem.id}`, JSON.stringify(recipeWithIngredients));
   }
 
   return savedItem;
@@ -450,6 +528,22 @@ export async function createSaleWithDeduction(
   };
   const currentSales = await loadSales();
   localStorage.setItem('espro_sales', JSON.stringify([sale, ...currentSales]));
+
+  // Deduct ingredient stock locally (with unit conversion support)
+  try {
+    const currentIngredients = await loadIngredients();
+    for (const item of cartItems) {
+      const recipe = await loadMenuItemRecipe(item.menu_item_id);
+      for (const r of recipe) {
+        const ing = currentIngredients.find(i => i.id === r.ingredient_id);
+        if (ing) {
+          const totalQtyUsed = Number(r.quantity_used) * Number(item.qty);
+          const convertedQty = convertUnitQuantity(totalQtyUsed, r.unit || ing.unit, ing.unit);
+          await adjustIngredientStock(ing.id, convertedQty, 'reduce', `POS Sale ${saleId}`);
+        }
+      }
+    }
+  } catch (_) {}
 }
 
 /** Legacy createSale for backward compat */

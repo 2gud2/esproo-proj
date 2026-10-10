@@ -1,22 +1,28 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingBag, Package, AlertTriangle,
-  Inbox
+  Inbox, ChevronRight, ArrowRight
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts';
 import Sidebar from '../components/Layout/Sidebar';
 import TopBar from '../components/Layout/TopBar';
+import { useAuth } from '../contexts/AuthContext';
 import { loadIngredients, loadSales, loadMenuItems } from '../lib/db';
 import type { Ingredient, Sale, MenuItem } from '../lib/mockData';
 import { format, subDays, isToday, isSameWeek, isSameMonth } from 'date-fns';
 import './Dashboard.css';
 
-const fade = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
+const fade = { hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } };
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const [salesTrendPeriod, setSalesTrendPeriod] = useState<'today' | 'weekly' | 'monthly'>('today');
   const [bsPeriod, setBsPeriod] = useState<'today' | 'week' | 'month'>('week');
   const [sales, setSales] = useState<Sale[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -60,15 +66,40 @@ export default function DashboardPage() {
     return todaySales.reduce((sum, s) => sum + s.total, 0);
   }, [todaySales]);
 
-  const _totalStockQuantity = useMemo(() => {
-    return ingredients.reduce((sum, i) => sum + i.stock_quantity, 0);
-  }, [ingredients]);
-
   const lowStockIngredients = useMemo(() => {
     return ingredients.filter(i => i.stock_quantity <= i.low_stock_threshold);
   }, [ingredients]);
 
-  const chartData = useMemo(() => {
+  // Today's Sales Hourly Chart Data
+  const todayChartData = useMemo(() => {
+    const hours = Array.from({ length: 17 }, (_, i) => {
+      const h = i + 6; // 6 AM to 10 PM
+      const label = format(new Date().setHours(h, 0, 0, 0), 'ha');
+      return { hour: h, day: label, sales: 0 };
+    });
+
+    sales.forEach(s => {
+      if (s.status === 'completed') {
+        const d = new Date(s.createdAt);
+        if (isToday(d)) {
+          const h = d.getHours();
+          const match = hours.find(item => item.hour === h);
+          if (match) {
+            match.sales += s.total;
+          } else if (h < 6 && hours[0]) {
+            hours[0].sales += s.total;
+          } else if (h > 22 && hours[hours.length - 1]) {
+            hours[hours.length - 1].sales += s.total;
+          }
+        }
+      }
+    });
+
+    return hours.map(h => ({ day: h.day, sales: h.sales }));
+  }, [sales]);
+
+  // Weekly Sales Daily Chart Data (Past 7 Days)
+  const weeklyChartData = useMemo(() => {
     const result = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(new Date(), 6 - i);
       return { day: format(d, 'EEE'), dateStr: d.toDateString(), sales: 0 };
@@ -86,6 +117,44 @@ export default function DashboardPage() {
 
     return result.map(r => ({ day: r.day, sales: r.sales }));
   }, [sales]);
+
+  // Monthly Sales Chart Data (Past 30 Days)
+  const monthlyChartData = useMemo(() => {
+    const result = Array.from({ length: 30 }, (_, i) => {
+      const d = subDays(new Date(), 29 - i);
+      return { day: format(d, 'MMM d'), dateStr: d.toDateString(), sales: 0 };
+    });
+
+    sales.forEach(s => {
+      if (s.status === 'completed') {
+        const sDate = new Date(s.createdAt).toDateString();
+        const match = result.find(r => r.dateStr === sDate);
+        if (match) {
+          match.sales += s.total;
+        }
+      }
+    });
+
+    return result.map(r => ({ day: r.day, sales: r.sales }));
+  }, [sales]);
+
+  const activeChartData = useMemo(() => {
+    if (salesTrendPeriod === 'today') return todayChartData;
+    if (salesTrendPeriod === 'weekly') return weeklyChartData;
+    return monthlyChartData;
+  }, [salesTrendPeriod, todayChartData, weeklyChartData, monthlyChartData]);
+
+  const todayTotal = useMemo(() => {
+    return todayChartData.reduce((sum, item) => sum + item.sales, 0);
+  }, [todayChartData]);
+
+  const weeklyTotal = useMemo(() => {
+    return weeklyChartData.reduce((sum, item) => sum + item.sales, 0);
+  }, [weeklyChartData]);
+
+  const monthlyTotal = useMemo(() => {
+    return monthlyChartData.reduce((sum, item) => sum + item.sales, 0);
+  }, [monthlyChartData]);
 
   const bestSellers = useMemo(() => {
     const now = new Date();
@@ -144,6 +213,7 @@ export default function DashboardPage() {
       icon: TrendingUp,
       color: '#943A1F',
       bg: 'rgba(148,58,31,0.1)',
+      route: user?.role === 'admin' ? '/reports' : '/pos',
     },
     {
       label: 'Transaction Count',
@@ -152,6 +222,7 @@ export default function DashboardPage() {
       icon: ShoppingBag,
       color: '#1565C0',
       bg: 'rgba(21,101,192,0.1)',
+      route: user?.role === 'admin' ? '/reports' : '/pos',
     },
     {
       label: 'Total Ingredients in Stock',
@@ -160,14 +231,16 @@ export default function DashboardPage() {
       icon: Package,
       color: '#2E7D32',
       bg: 'rgba(46,125,50,0.1)',
+      route: '/inventory',
     },
     {
       label: 'Low-Stock Alerts',
       value: lowStockIngredients.length.toString(),
-      sub: lowStockIngredients.length > 0 ? 'Ingredients need restocking' : 'All stock levels healthy',
+      sub: lowStockIngredients.length > 0 ? `${lowStockIngredients.length} item(s) need restocking` : 'All stock levels healthy',
       icon: AlertTriangle,
       color: lowStockIngredients.length > 0 ? '#E65100' : '#2E7D32',
       bg: lowStockIngredients.length > 0 ? 'rgba(230,81,0,0.1)' : 'rgba(46,125,50,0.1)',
+      route: '/inventory',
     },
   ];
 
@@ -193,23 +266,42 @@ export default function DashboardPage() {
       <Sidebar />
       <div className="main-content">
         <TopBar title="Dashboard" action={
-          <button className="btn btn-primary" onClick={() => window.location.href = '/pos'}>
+          <button className="btn btn-primary" onClick={() => navigate('/pos')}>
             + New Sale
           </button>
         } />
-        <main className="page-body">
-          {/* Stat Cards */}
+        <main className="page-body compact-dashboard">
+          {/* Stat Cards Grid (Compact & Clickable) */}
           <motion.div
             className="stats-grid"
-            variants={{ show: { transition: { staggerChildren: 0.08 } } }}
+            variants={{ show: { transition: { staggerChildren: 0.05 } } }}
             initial="hidden"
             animate="show"
           >
             {statCards.map((card) => (
-              <motion.div key={card.label} className="card card-pad stat-card" variants={fade}>
+              <motion.div
+                key={card.label}
+                className="card stat-card compact clickable"
+                variants={fade}
+                onClick={() => navigate(card.route)}
+                whileHover={{ scale: 1.015 }}
+                whileTap={{ scale: 0.985 }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    navigate(card.route);
+                  }
+                }}
+              >
                 <div className="stat-card-top">
                   <div className="stat-icon" style={{ background: card.bg, color: card.color }}>
-                    <card.icon size={20} />
+                    <card.icon size={18} />
+                  </div>
+                  <div className="stat-arrow-hint">
+                    <span>Open</span>
+                    <ChevronRight size={14} />
                   </div>
                 </div>
                 <div className="stat-value">{card.value}</div>
@@ -221,54 +313,93 @@ export default function DashboardPage() {
 
           {/* Charts & Low Stock Row */}
           <div className="dashboard-grid">
-            {/* Area chart */}
-            <motion.div className="card card-pad" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-              <div className="section-header">
+            {/* Sales Trend Line Graph Card with Today / Weekly / Monthly Switcher */}
+            <motion.div className="card card-pad" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+              <div className="section-header flex-wrap gap-3">
                 <div>
-                  <h3>Weekly Sales</h3>
-                  <p className="page-subtitle">Live revenue trend over the past 7 days</p>
+                  <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    Sales Trend Line Graph
+                  </h3>
+                  <p className="page-subtitle">
+                    {salesTrendPeriod === 'today' && "Hourly sales performance for Today"}
+                    {salesTrendPeriod === 'weekly' && "Daily revenue trend over the past 7 days"}
+                    {salesTrendPeriod === 'monthly' && "Daily revenue trend over the past 30 days"}
+                  </p>
+                </div>
+                {/* Period Selector Tabs: Today's Sales, Weekly Sales, Month Sales */}
+                <div className="trend-period-tabs">
+                  <button
+                    className={`trend-tab ${salesTrendPeriod === 'today' ? 'active' : ''}`}
+                    onClick={() => setSalesTrendPeriod('today')}
+                  >
+                    <span className="trend-tab-title">Today's Sales</span>
+                    <span className="trend-tab-val">₱{todayTotal.toLocaleString('en-PH', { maximumFractionDigits: 0 })}</span>
+                  </button>
+                  <button
+                    className={`trend-tab ${salesTrendPeriod === 'weekly' ? 'active' : ''}`}
+                    onClick={() => setSalesTrendPeriod('weekly')}
+                  >
+                    <span className="trend-tab-title">Weekly Sales</span>
+                    <span className="trend-tab-val">₱{weeklyTotal.toLocaleString('en-PH', { maximumFractionDigits: 0 })}</span>
+                  </button>
+                  <button
+                    className={`trend-tab ${salesTrendPeriod === 'monthly' ? 'active' : ''}`}
+                    onClick={() => setSalesTrendPeriod('monthly')}
+                  >
+                    <span className="trend-tab-title">Month Sales</span>
+                    <span className="trend-tab-val">₱{monthlyTotal.toLocaleString('en-PH', { maximumFractionDigits: 0 })}</span>
+                  </button>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+              <ResponsiveContainer width="100%" height={210}>
+                <AreaChart data={activeChartData} margin={{ top: 8, right: 8, bottom: 0, left: -15 }}>
                   <defs>
                     <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#943A1F" stopOpacity={0.25} />
+                      <stop offset="0%" stopColor="#943A1F" stopOpacity={0.3} />
                       <stop offset="100%" stopColor="#943A1F" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => `₱${v >= 1000 ? (v/1000).toFixed(0) + 'k' : v}`} />
                   <Tooltip
                     contentStyle={{ background: 'var(--secondary)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13 }}
-                    formatter={(v: any) => [`₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, 'Sales']}
+                    formatter={(v: any) => [`₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, 'Revenue']}
                     cursor={{ stroke: 'var(--primary)', strokeWidth: 1.5 }}
                   />
-                  <Area type="monotone" dataKey="sales" stroke="var(--primary)" strokeWidth={2.5} fill="url(#salesGrad)" dot={false} activeDot={{ r: 5, fill: 'var(--primary)' }} />
+                  <Area type="monotone" dataKey="sales" stroke="var(--primary)" strokeWidth={2.5} fill="url(#salesGrad)" dot={{ r: 3, fill: 'var(--primary)' }} activeDot={{ r: 6, fill: 'var(--primary)' }} />
                 </AreaChart>
               </ResponsiveContainer>
             </motion.div>
 
-            {/* Low Stock Ingredients */}
-            <motion.div className="card" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}>
+            {/* Low Stock Ingredients Card */}
+            <motion.div className="card" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
               <div className="card-pad section-header">
                 <div>
-                  <h3>Low-Stock Items</h3>
+                  <h3 className="clickable-title" onClick={() => navigate('/inventory')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    Low-Stock Items <ArrowRight size={14} className="title-arrow" />
+                  </h3>
                   <p className="page-subtitle">Matching Inventory alert list</p>
                 </div>
-                <span className={`badge ${lowStockIngredients.length > 0 ? 'badge-danger' : 'badge-success'}`}>
-                  {lowStockIngredients.length} Low
-                </span>
+                <button className="badge badge-link" onClick={() => navigate('/inventory')} style={{ border: 'none', cursor: 'pointer' }}>
+                  <span className={`badge ${lowStockIngredients.length > 0 ? 'badge-danger' : 'badge-success'}`}>
+                    {lowStockIngredients.length} Low
+                  </span>
+                </button>
               </div>
               <div className="low-stock-list">
                 {lowStockIngredients.length === 0 ? (
-                  <div className="empty-state" style={{ padding: '30px 10px' }}>
-                    <Package size={28} />
+                  <div className="empty-state" style={{ padding: '25px 10px' }}>
+                    <Package size={26} />
                     <p>All ingredients are well stocked!</p>
                   </div>
-                ) : lowStockIngredients.map(ing => (
-                  <div key={ing.id} className="low-stock-item">
+                ) : lowStockIngredients.slice(0, 5).map(ing => (
+                  <div
+                    key={ing.id}
+                    className="low-stock-item clickable"
+                    onClick={() => navigate('/inventory')}
+                    title="Click to manage inventory"
+                  >
                     <div className="low-stock-icon"><Package size={16} /></div>
                     <div className="low-stock-info">
                       <span className="low-stock-name">{ing.name}</span>
@@ -284,11 +415,13 @@ export default function DashboardPage() {
             </motion.div>
           </div>
 
-          {/* Best Sellers */}
-          <motion.div className="card" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+          {/* Best Sellers Card */}
+          <motion.div className="card" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
             <div className="card-pad section-header">
               <div>
-                <h3>Best-Selling Items</h3>
+                <h3 className="clickable-title" onClick={() => navigate(user?.role === 'admin' ? '/reports' : '/pos')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  Best-Selling Items <ArrowRight size={14} className="title-arrow" />
+                </h3>
                 <p className="page-subtitle">Ranked by actual quantity sold</p>
               </div>
               <div className="period-tabs">
@@ -301,8 +434,8 @@ export default function DashboardPage() {
             </div>
 
             {bestSellers.length === 0 ? (
-              <div className="empty-state" style={{ padding: '40px 20px' }}>
-                <Inbox size={32} />
+              <div className="empty-state" style={{ padding: '30px 20px' }}>
+                <Inbox size={28} />
                 <p>No sales recorded yet for this period.</p>
               </div>
             ) : (
@@ -319,7 +452,12 @@ export default function DashboardPage() {
                   </thead>
                   <tbody>
                     {bestSellers.map(bs => (
-                      <tr key={bs.name}>
+                      <tr
+                        key={bs.name}
+                        className="clickable-row"
+                        onClick={() => navigate(user?.role === 'admin' ? '/menu' : '/pos')}
+                        title="Click to open menu items"
+                      >
                         <td>
                           <span className={`rank-badge rank-${bs.rank}`}>#{bs.rank}</span>
                         </td>
@@ -339,3 +477,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

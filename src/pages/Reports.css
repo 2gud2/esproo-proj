@@ -1,3 +1,5 @@
+/* Financial Reports Styles */
+
 .reports-filters {
   display: flex;
   align-items: center;
@@ -33,5 +35,150 @@
   transition: all var(--transition);
   white-space: nowrap;
 }
-.reports-tab:hover:not(.active) { background: var(--surface-2); color: var(--text-primary); }
-.reports-tab.active { background: var(--primary); color: #fff; font-weight: 600; }
+
+.reports-tab:hover:not(.active) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.reports-tab.active {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Expense Report 2-Section Grid */
+.expense-sections-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+@media (max-width: 1024px) {
+  .expense-sections-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.report-section-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.report-section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.table-total-row {
+  background: var(--surface-2);
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+}
+
+/* Profit Summary Income Statement Styling */
+.income-statement-card {
+  max-width: 780px;
+  margin: 0 auto;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.income-statement-header {
+  padding: 20px 24px 16px;
+  border-bottom: 2px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.income-statement-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font);
+}
+
+.income-statement-table th {
+  background: var(--surface-2);
+  padding: 12px 24px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.75px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.income-statement-table td {
+  padding: 12px 24px;
+  font-size: 0.95rem;
+  border-bottom: 1px solid var(--border-light, rgba(0, 0, 0, 0.05));
+}
+
+.income-statement-row-label {
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+}
+
+.income-statement-row-label.indent {
+  padding-left: 20px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.income-statement-val {
+  text-align: right;
+  font-family: 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.val-positive {
+  color: var(--success);
+}
+
+.val-negative {
+  color: var(--danger);
+}
+
+.income-statement-subtotal-row {
+  background: rgba(46, 125, 50, 0.04);
+}
+
+.income-statement-final-row {
+  background: var(--surface-2);
+  border-top: 2px solid var(--border);
+}
+
+.income-statement-final-row td {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.double-underline {
+  border-bottom: 3px double var(--success);
+  padding-bottom: 3px;
+  display: inline-block;
+}
+
+.double-underline.loss {
+  border-bottom: 3px double var(--danger);
+}

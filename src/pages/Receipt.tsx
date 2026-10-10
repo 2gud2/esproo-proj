@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Printer, X, Coffee, CheckCircle } from 'lucide-react';
+import { Printer, Coffee, CheckCircle, ArrowLeft, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import './Receipt.css';
 
@@ -44,16 +44,16 @@ export default function ReceiptPage() {
 
   return (
     <div className="receipt-root">
-      <motion.div className="receipt-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+      <motion.div className="receipt-card" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}>
         {/* Success badge */}
         <div className="receipt-success">
-          <CheckCircle size={36} color="var(--success)" />
+          <CheckCircle size={20} color="var(--success)" />
           <span>Sale Completed!</span>
         </div>
 
         {/* Store header */}
         <div className="receipt-header">
-          <div className="receipt-logo"><Coffee size={20} /></div>
+          <div className="receipt-logo"><Coffee size={18} /></div>
           <h2>Espro</h2>
           <p>Official Receipt</p>
         </div>
@@ -64,7 +64,7 @@ export default function ReceiptPage() {
           <div><span>Date</span><strong>{format(now, 'MMM dd, yyyy')}</strong></div>
           <div><span>Time</span><strong>{format(now, 'hh:mm a')}</strong></div>
           <div><span>Cashier</span><strong>{receipt.cashier}</strong></div>
-          <div><span>Payment</span><strong>{receipt.payment === 'cash' ? 'Cash' : 'GCash/Maya'}</strong></div>
+          <div><span>Payment</span><strong>{receipt.payment === 'cash' ? 'Cash' : 'Digital Payment'}</strong></div>
         </div>
 
         <div className="receipt-divider">─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</div>
@@ -114,13 +114,16 @@ export default function ReceiptPage() {
         <div className="receipt-divider">─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</div>
         <p className="receipt-thanks">Thank you for your purchase!</p>
 
-        {/* Actions */}
+        {/* Actions (With Back Button, Print, and New Sale) */}
         <div className="receipt-actions no-print">
-          <motion.button className="btn btn-primary" onClick={() => window.print()} whileTap={{ scale: 0.96 }}>
-            <Printer size={16} /> Print Receipt
+          <motion.button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)} whileTap={{ scale: 0.96 }} title="Go Back">
+            <ArrowLeft size={15} /> Back
           </motion.button>
-          <motion.button className="btn btn-ghost" onClick={() => navigate('/pos')} whileTap={{ scale: 0.96 }}>
-            <X size={16} /> New Sale
+          <motion.button className="btn btn-primary btn-sm" onClick={() => window.print()} whileTap={{ scale: 0.96 }}>
+            <Printer size={15} /> Print
+          </motion.button>
+          <motion.button className="btn btn-secondary btn-sm" onClick={() => navigate('/pos')} whileTap={{ scale: 0.96 }}>
+            <Plus size={15} /> New Sale
           </motion.button>
         </div>
       </motion.div>
