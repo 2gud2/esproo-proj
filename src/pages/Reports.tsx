@@ -49,7 +49,7 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import './Reports.css';
 
-type Tab = 'sales' | 'expenses' | 'profit' | 'inventory';
+type Tab = 'sales' | 'expenses' | 'profit';
 
 const PAGE_SIZE = 20;
 
@@ -65,7 +65,6 @@ export default function ReportsPage() {
 
   // Pagination states
   const [salesPage, setSalesPage] = useState(1);
-  const [inventoryPage, setInventoryPage] = useState(1);
 
   // State for reports data
   const [sales, setSales] = useState<Sale[]>([]);
@@ -266,10 +265,6 @@ export default function ReportsPage() {
     setSalesPage(1);
   }, [dateFrom, dateTo, datePreset, statusFilter, orderTypeFilter, tab]);
 
-  useEffect(() => {
-    setInventoryPage(1);
-  }, [tab]);
-
   // Filtered sales based on local date range, status filter, and order type filter
   const filteredSales = useMemo(() => {
     return sales.filter((s) => {
@@ -300,11 +295,6 @@ export default function ReportsPage() {
   const paginatedSales = useMemo(() => {
     return filteredSales.slice((salesPage - 1) * PAGE_SIZE, salesPage * PAGE_SIZE);
   }, [filteredSales, salesPage]);
-
-  const totalInventoryPages = Math.ceil(ingredients.length / PAGE_SIZE) || 1;
-  const paginatedIngredients = useMemo(() => {
-    return ingredients.slice((inventoryPage - 1) * PAGE_SIZE, inventoryPage * PAGE_SIZE);
-  }, [ingredients, inventoryPage]);
 
   // Helper to count item quantity in sale
   const getItemCount = (items: any[]) => {
@@ -992,14 +982,6 @@ export default function ReportsPage() {
         const csv = buildProfitCsv(fullReportData);
         downloadCsv(`espro_profit_loss_${slug}.csv`, csv);
         toast.success('Profit & Loss statement exported to CSV!');
-      } else if (tab === 'inventory') {
-        if (ingredients.length === 0) {
-          toast.error('No inventory items to export');
-          return;
-        }
-        const csv = buildInventoryCsv(fullReportData);
-        downloadCsv(`espro_inventory_${slug}.csv`, csv);
-        toast.success('Inventory valuation exported to CSV!');
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to export CSV');
@@ -1037,10 +1019,6 @@ export default function ReportsPage() {
       }
       if (tab === 'expenses' && cogsBreakdown.length === 0 && filteredExpenses.length === 0) {
         toast.error('No expense data to export for selected filter');
-        return;
-      }
-      if (tab === 'inventory' && ingredients.length === 0) {
-        toast.error('No inventory items to export');
         return;
       }
 
@@ -1116,7 +1094,6 @@ export default function ReportsPage() {
     { key: 'sales', label: 'Sales Report', icon: BarChart3 },
     { key: 'expenses', label: 'Expense Report', icon: Receipt },
     { key: 'profit', label: 'Profit Summary', icon: DollarSign },
-    { key: 'inventory', label: 'Raw Ingredients Report', icon: Package },
   ];
 
   // ════════════════════════════════════════════════════════════
@@ -2059,152 +2036,6 @@ export default function ReportsPage() {
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* ════════════════════════════════════════════════════════════
-                TAB 4: RAW INGREDIENTS REPORT (Detailed Valuation & Status)
-               ════════════════════════════════════════════════════════════ */}
-            {tab === 'inventory' && (
-              <div className="card">
-                <div
-                  className="card-pad"
-                  style={{
-                    borderBottom: '1px solid var(--border)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: 12,
-                  }}
-                >
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>
-                      Raw Ingredients &amp; Supplies Valuation ({ingredients.length} items)
-                    </h3>
-                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                      Batch-weighted inventory balances, unit cost valuation, and FEFO stock status
-                    </p>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span className="badge badge-primary" style={{ fontWeight: 700 }}>
-                      Valuation: ₱
-                      {inventoryValuationData.totalValue.toLocaleString('en-PH', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                    <span className="badge badge-neutral">
-                      Ingredients: ₱
-                      {inventoryValuationData.ingredientsValue.toLocaleString('en-PH', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                    <span className="badge badge-neutral">
-                      Supplies: ₱
-                      {inventoryValuationData.suppliesValue.toLocaleString('en-PH', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                    {inventoryValuationData.lowStockCount > 0 && (
-                      <span className="badge badge-warning">
-                        ● {inventoryValuationData.lowStockCount} Low
-                      </span>
-                    )}
-                    {inventoryValuationData.outOfStockCount > 0 && (
-                      <span className="badge badge-danger">
-                        ● {inventoryValuationData.outOfStockCount} Out
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {ingredients.length === 0 ? (
-                  <div className="empty-state" style={{ padding: '50px 20px' }}>
-                    <Package size={32} />
-                    <p>No ingredients found in database.</p>
-                  </div>
-                ) : (
-                  <div className="table-wrap">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Item Name</th>
-                          <th>Category</th>
-                          <th>Unit</th>
-                          <th>Current Stock</th>
-                          <th style={{ textAlign: 'right' }}>Unit Cost</th>
-                          <th style={{ textAlign: 'right' }}>Stock Valuation</th>
-                          <th>Threshold</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedIngredients.map((ing) => {
-                          const isOut = isOutOfStock(ing);
-                          const isLow = isLowStock(ing);
-                          const valItem = inventoryValuationData.items.find((i) => i.id === ing.id);
-                          const stockVal =
-                            valItem?.stockValue ??
-                            Number(ing.stock_quantity || 0) * Number(ing.cost_per_unit || 0);
-
-                          return (
-                            <tr key={ing.id}>
-                              <td style={{ fontWeight: 600 }}>{ing.name}</td>
-                              <td>
-                                <span className="badge badge-neutral">
-                                  {ing.item_type === 'supply' ? 'Packaging/Supply' : 'Raw Ingredient'}
-                                </span>
-                              </td>
-                              <td>
-                                <span className="badge badge-neutral">{ing.unit}</span>
-                              </td>
-                              <td style={{ fontWeight: 600 }}>
-                                {ing.stock_quantity} {ing.unit}
-                              </td>
-                              <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
-                                ₱
-                                {Number(ing.cost_per_unit || 0).toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </td>
-                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--primary)' }}>
-                                ₱
-                                {stockVal.toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </td>
-                              <td style={{ color: 'var(--text-muted)' }}>
-                                {ing.low_stock_threshold} {ing.unit}
-                              </td>
-                              <td>
-                                {isOut ? (
-                                  <span className="badge badge-danger">● Out of Stock</span>
-                                ) : isLow ? (
-                                  <span className="badge badge-warning">● Low Stock</span>
-                                ) : (
-                                  <span className="badge badge-success">● In Stock</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                <Pagination
-                  currentPage={inventoryPage}
-                  totalPages={totalInventoryPages}
-                  onPageChange={setInventoryPage}
-                  totalItems={ingredients.length}
-                  pageSize={PAGE_SIZE}
-                />
               </div>
             )}
           </motion.div>

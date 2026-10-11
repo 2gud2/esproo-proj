@@ -12,10 +12,10 @@ import './Sidebar.css';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/pos', icon: ShoppingCart, label: 'POS' },
+  { to: '/pos', icon: ShoppingCart, label: 'Sales Management (POS)' },
   { to: '/menu', icon: UtensilsCrossed, label: 'Menu', adminOnly: true },
   { to: '/inventory', icon: Package, label: 'Inventory Management' },
-  { to: '/expenses', icon: Receipt, label: 'Expenses Management' },
+  { to: '/expenses', icon: Receipt, label: 'Expense Management' },
   { to: '/reports', icon: BarChart3, label: 'Financial Reports', adminOnly: true },
   { to: '/employees', icon: Users, label: 'Employee Management', adminOnly: true },
   { to: '/users', icon: UserCog, label: 'User Management', adminOnly: true },
@@ -109,7 +109,7 @@ export default function Sidebar() {
     setCollapsed(next);
     try {
       localStorage.setItem(STORAGE_KEY, String(next));
-    } catch {}
+    } catch { }
     if (next && window.innerWidth > 768) {
       document.documentElement.classList.add('sidebar-collapsed');
       document.documentElement.setAttribute('data-sidebar-collapsed', 'true');

@@ -87,6 +87,7 @@ export const BRAND_COLORS = {
   border: [232, 232, 230] as [number, number, number],      // #E8E8E6
   success: [46, 125, 50] as [number, number, number],       // #2E7D32
   danger: [198, 40, 40] as [number, number, number],        // #C62828
+  warning: [217, 119, 6] as [number, number, number],       // #D97706
   white: [255, 255, 255] as [number, number, number],
 };
 
@@ -252,6 +253,8 @@ export interface FullReportData {
     expiredRiskValue: number;
   };
 }
+
+export type InventoryValuationReport = FullReportData['inventory'];
 
 // ════════════════════════════════════════════════════════════
 // FORMATTING HELPERS
@@ -831,7 +834,10 @@ export function buildProfitCsv(data: FullReportData): string {
 /**
  * 5. Inventory Valuation & Stock Status CSV
  */
-export function buildInventoryCsv(data: FullReportData): string {
+export function buildInventoryCsv(data: {
+  meta: ReportFilterMeta;
+  inventory: InventoryValuationReport;
+}): string {
   const lines: string[] = [];
   lines.push(...buildCsvMetadataBlock('Espro Raw Ingredients & Supplies Valuation', data.meta));
 
@@ -1630,6 +1636,64 @@ function renderNotesAndAssumptions(doc: jsPDF, startY: number): number {
 // ════════════════════════════════════════════════════════════
 
 /**
+ * Draws executive KPI cards specifically for Raw Ingredients & Supplies Valuation.
+ */
+function drawInventorySummaryCards(
+  doc: jsPDF,
+  inv: InventoryValuationReport,
+  startY: number,
+  orientation: 'landscape' | 'portrait'
+): number {
+  const pageWidth = orientation === 'landscape' ? 297 : 210;
+  const marginX = 14;
+  const contentWidth = pageWidth - marginX * 2;
+
+  const cards: Array<{
+    label: string;
+    value: string;
+    color: [number, number, number];
+    isHighlighted?: boolean;
+  }> = [
+    { label: 'TOTAL VALUATION', value: formatAccountingNumber(inv.totalValue, false, true), color: BRAND_COLORS.primary, isHighlighted: true },
+    { label: 'INGREDIENTS VALUE', value: formatAccountingNumber(inv.ingredientsValue, false, true), color: BRAND_COLORS.dark },
+    { label: 'SUPPLIES VALUE', value: formatAccountingNumber(inv.suppliesValue, false, true), color: BRAND_COLORS.dark },
+    { label: 'TRACKED ITEMS', value: `${inv.items.length}`, color: BRAND_COLORS.dark },
+    { label: 'LOW STOCK ITEMS', value: `${inv.lowStockCount}`, color: inv.lowStockCount > 0 ? BRAND_COLORS.warning : BRAND_COLORS.dark },
+    { label: 'OUT OF STOCK', value: `${inv.outOfStockCount}`, color: inv.outOfStockCount > 0 ? BRAND_COLORS.danger : BRAND_COLORS.dark },
+  ];
+
+  const gap = 3;
+  const cardWidth = (contentWidth - gap * (cards.length - 1)) / cards.length;
+  const cardHeight = 17;
+
+  cards.forEach((card, idx) => {
+    const x = marginX + idx * (cardWidth + gap);
+
+    if (card.isHighlighted) {
+      doc.setFillColor(254, 243, 199);
+    } else {
+      doc.setFillColor(...BRAND_COLORS.surface);
+    }
+    doc.roundedRect(x, startY, cardWidth, cardHeight, 1.5, 1.5, 'F');
+    doc.setDrawColor(...BRAND_COLORS.border);
+    doc.setLineWidth(0.2);
+    doc.roundedRect(x, startY, cardWidth, cardHeight, 1.5, 1.5, 'S');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...BRAND_COLORS.muted);
+    doc.text(card.label, x + 3, startY + 5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(card.color[0], card.color[1], card.color[2]);
+    doc.text(card.value, x + 3, startY + 12);
+  });
+
+  return startY + cardHeight + 8;
+}
+
+/**
  * Exports a PDF report tailored to the active tab.
  */
 export function exportTabPdf(
@@ -1652,27 +1716,65 @@ export function exportTabPdf(
   };
 
   let y = drawReportHeader(doc, titleMap[tab], data.meta, orientation);
-  y = drawExecutiveSummaryCards(doc, data.summary, y, orientation);
 
-  if (tab === 'sales') {
-    y = renderSalesSummarySection(doc, data, y);
-    if (y > 175) {
-      doc.addPage();
-      y = 20;
-    }
-    renderSalesLedgerSection(doc, data, y);
-  } else if (tab === 'expenses') {
-    renderExpensesSection(doc, data, y);
-  } else if (tab === 'profit') {
-    renderProfitLossSection(doc, data, y);
-  } else if (tab === 'inventory') {
+  if (tab === 'inventory') {
+    y = drawInventorySummaryCards(doc, data.inventory, y, orientation);
     renderInventorySection(doc, data, y);
+  } else {
+    y = drawExecutiveSummaryCards(doc, data.summary, y, orientation);
+    if (tab === 'sales') {
+      y = renderSalesSummarySection(doc, data, y);
+      if (y > 175) {
+        doc.addPage();
+        y = 20;
+      }
+      renderSalesLedgerSection(doc, data, y);
+    } else if (tab === 'expenses') {
+      renderExpensesSection(doc, data, y);
+    } else if (tab === 'profit') {
+      renderProfitLossSection(doc, data, y);
+    }
   }
 
   applyFooters(doc, data.meta);
 
   const filename = `espro_${tab}_report_${getPeriodFilenameSlug(data.meta)}.pdf`;
   doc.save(filename);
+}
+
+/**
+ * Standalone export for Raw Ingredients & Supplies Valuation Report PDF (Landscape A4).
+ */
+export function exportInventoryValuationPdf(data: {
+  meta: ReportFilterMeta;
+  inventory: InventoryValuationReport;
+}): void {
+  const orientation = 'landscape';
+  const doc = new jsPDF({
+    orientation,
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  let y = drawReportHeader(doc, 'Raw Ingredients & Supplies Valuation Audit', data.meta, orientation);
+  y = drawInventorySummaryCards(doc, data.inventory, y, orientation);
+  renderInventorySection(doc, data as any, y);
+  applyFooters(doc, data.meta);
+
+  const filename = `espro_raw_ingredients_valuation_${getPeriodFilenameSlug(data.meta)}.pdf`;
+  doc.save(filename);
+}
+
+/**
+ * Standalone export for Raw Ingredients & Supplies Valuation Report CSV.
+ */
+export function exportInventoryValuationCsv(data: {
+  meta: ReportFilterMeta;
+  inventory: InventoryValuationReport;
+}): void {
+  const csv = buildInventoryCsv(data);
+  const filename = `espro_raw_ingredients_valuation_${getPeriodFilenameSlug(data.meta)}.csv`;
+  downloadCsv(filename, csv);
 }
 
 /**

@@ -1,14 +1,17 @@
-import React, { useState, useMemo, useEffect, Fragment } from 'react';
+import React, { useState, useMemo, useEffect, useRef, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { format } from 'date-fns';
 import {
   Plus, Edit2, X, Trash2, Calendar,
   AlertTriangle, ChevronDown, ChevronRight,
-  PackagePlus, Layers, CheckCircle, Package, Utensils
+  PackagePlus, Layers, CheckCircle, Package, Utensils,
+  BarChart3, Download, FileText
 } from 'lucide-react';
 import Sidebar from '../components/Layout/Sidebar';
 import TopBar from '../components/Layout/TopBar';
 import Pagination from '../components/Common/Pagination';
+import { useAuth } from '../contexts/AuthContext';
 import type { Ingredient, IngredientBatch } from '../lib/mockData';
 import {
   loadIngredients,
@@ -21,6 +24,13 @@ import {
   expireBatches
 } from '../lib/db';
 import { isOutOfStock, isLowStock, getExpirationInfo, type ExpirationInfo } from '../lib/stockStatus';
+import {
+  exportInventoryValuationPdf,
+  exportInventoryValuationCsv,
+  type ReportFilterMeta,
+  type InventoryValuationReport,
+  type InventoryItemValuation,
+} from '../lib/reportExport';
 import toast from 'react-hot-toast';
 import './Inventory.css';
 
@@ -86,10 +96,12 @@ const defaultEditBatchForm = {
 };
 
 export default function InventoryPage() {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [batches, setBatches] = useState<IngredientBatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'inventory' | 'valuation'>('inventory');
   const [search, setSearch] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<ItemTypeFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
@@ -100,6 +112,24 @@ export default function InventoryPage() {
     return 'all';
   });
   const [page, setPage] = useState(1);
+  const [valuationPage, setValuationPage] = useState(1);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Click-outside listener for export dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        exportDropdownRef.current &&
+        !exportDropdownRef.current.contains(event.target as Node)
+      ) {
+        setExportDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Sync statusFilter if query param changes
   useEffect(() => {
@@ -275,6 +305,182 @@ export default function InventoryPage() {
   const paginatedIngredients = useMemo(() => {
     return filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   }, [filtered, page]);
+
+  // Batch-weighted inventory valuation & FEFO status report
+  const inventoryValuationData: InventoryValuationReport = useMemo(() => {
+    let totalVal = 0;
+    let ingredientsVal = 0;
+    let suppliesVal = 0;
+    let lowCount = 0;
+    let outCount = 0;
+    let nearExpCount = 0;
+    let expCount = 0;
+    let expRiskVal = 0;
+
+    const items = ingredients.map((ing) => {
+      const activeBatches = batches.filter(
+        (b) => b.ingredient_id === ing.id && b.status === 'active' && Number(b.quantity_remaining) > 0
+      );
+
+      // Prefer batch-weighted stock value using remaining quantity × batch unit cost
+      let stockValue = 0;
+      if (activeBatches.length > 0) {
+        stockValue = activeBatches.reduce(
+          (sum, b) => sum + Number(b.quantity_remaining) * Number(b.cost_per_unit || 0),
+          0
+        );
+      } else {
+        stockValue = Number(ing.stock_quantity || 0) * Number(ing.cost_per_unit || 0);
+      }
+
+      const activeExpDates = activeBatches
+        .map((b) => b.expiration_date)
+        .filter(Boolean) as string[];
+      const earliestExp =
+        activeExpDates.length > 0
+          ? activeExpDates.sort()[0]
+          : ing.expiration_date || null;
+
+      const expInfo = getExpirationInfo(earliestExp);
+      const isOut = isOutOfStock(ing);
+      const isLow = isLowStock(ing);
+
+      const status: 'In Stock' | 'Low Stock' | 'Out of Stock' = isOut
+        ? 'Out of Stock'
+        : isLow
+        ? 'Low Stock'
+        : 'In Stock';
+
+      if (isOut) outCount++;
+      else if (isLow) lowCount++;
+
+      const isExpired = expInfo.status === 'expired' || expInfo.status === 'expired_today';
+      const isNearExpiry = expInfo.status === 'near_expiry';
+
+      if (isExpired) {
+        expCount++;
+        expRiskVal += stockValue;
+      } else if (isNearExpiry) {
+        nearExpCount++;
+      }
+
+      totalVal += stockValue;
+      if (ing.item_type === 'supply') {
+        suppliesVal += stockValue;
+      } else {
+        ingredientsVal += stockValue;
+      }
+
+      return {
+        id: ing.id,
+        name: ing.name,
+        itemType: (ing.item_type || 'ingredient') as 'ingredient' | 'supply',
+        unit: ing.unit,
+        stockQuantity: Number(ing.stock_quantity || 0),
+        unitCost: Number(ing.cost_per_unit || 0),
+        stockValue,
+        lowStockThreshold: Number(ing.low_stock_threshold || 10),
+        status,
+        earliestExpiry: earliestExp,
+        daysToExpiry: expInfo.daysLeft,
+        isExpired,
+        isNearExpiry,
+      };
+    });
+
+    return {
+      items,
+      totalValue: totalVal,
+      ingredientsValue: ingredientsVal,
+      suppliesValue: suppliesVal,
+      lowStockCount: lowCount,
+      outOfStockCount: outCount,
+      nearExpiryCount: nearExpCount,
+      expiredCount: expCount,
+      expiredRiskValue: expRiskVal,
+    };
+  }, [ingredients, batches]);
+
+  // Filtered items for Valuation Report
+  const filteredValuationItems = useMemo(() => {
+    return inventoryValuationData.items.filter((item: InventoryItemValuation) => {
+      const itemType = item.itemType || 'ingredient';
+      if (itemTypeFilter !== 'all' && itemType !== itemTypeFilter) return false;
+      if (statusFilter === 'low' && item.status !== 'Low Stock') return false;
+      if (statusFilter === 'out' && item.status !== 'Out of Stock') return false;
+      if (statusFilter === 'near_expiry' && !item.isNearExpiry) return false;
+      if (statusFilter === 'expired' && !item.isExpired) return false;
+
+      const query = search.toLowerCase();
+      return (
+        item.name.toLowerCase().includes(query) ||
+        item.unit.toLowerCase().includes(query)
+      );
+    });
+  }, [inventoryValuationData.items, itemTypeFilter, statusFilter, search]);
+
+  useEffect(() => {
+    setValuationPage(1);
+  }, [search, itemTypeFilter, statusFilter]);
+
+  const totalValuationPages = Math.ceil(filteredValuationItems.length / PAGE_SIZE) || 1;
+  const paginatedValuationItems = useMemo(() => {
+    return filteredValuationItems.slice(
+      (valuationPage - 1) * PAGE_SIZE,
+      valuationPage * PAGE_SIZE
+    );
+  }, [filteredValuationItems, valuationPage]);
+
+  const reportMeta: ReportFilterMeta = useMemo(() => ({
+    datePreset: 'all_time',
+    periodLabel: `As of ${format(new Date(), 'MMMM dd, yyyy · hh:mm a')}`,
+    generatedBy: user?.name || user?.email || 'Administrator',
+    generatedAt: new Date(),
+    businessName: 'Espro Coffee & Tea',
+  }), [user]);
+
+  async function handleExportValuationPdf() {
+    setExportDropdownOpen(false);
+    setIsExporting(true);
+    try {
+      if (inventoryValuationData.items.length === 0) {
+        toast.error('No inventory data to export');
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+      exportInventoryValuationPdf({
+        meta: reportMeta,
+        inventory: inventoryValuationData,
+      });
+      toast.success('Raw ingredients valuation report exported to PDF!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to export valuation PDF');
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  async function handleExportValuationCsv() {
+    setExportDropdownOpen(false);
+    setIsExporting(true);
+    try {
+      if (inventoryValuationData.items.length === 0) {
+        toast.error('No inventory data to export');
+        return;
+      }
+      exportInventoryValuationCsv({
+        meta: reportMeta,
+        inventory: inventoryValuationData,
+      });
+      toast.success('Raw ingredients valuation report exported to CSV!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to export valuation CSV');
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   // Counts by item type
   const ingredientCount = useMemo(() => ingredients.filter(i => (i.item_type || 'ingredient') === 'ingredient').length, [ingredients]);
@@ -487,11 +693,49 @@ export default function InventoryPage() {
       <Sidebar />
       <div className="main-content">
         <TopBar
-          title="Inventory"
-          searchPlaceholder="Search inventory by name or unit..."
+          title="Inventory Management"
+          searchPlaceholder={activeTab === 'inventory' ? "Search inventory by name or unit..." : "Search valuation report..."}
           onSearch={setSearch}
           action={
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div className="inv-export-wrapper" ref={exportDropdownRef}>
+                <button
+                  type="button"
+                  className="btn btn-secondary inv-export-btn"
+                  onClick={() => setExportDropdownOpen((prev) => !prev)}
+                  disabled={isExporting}
+                >
+                  <Download size={15} />
+                  <span>{isExporting ? 'Exporting...' : 'Export Valuation'}</span>
+                  <ChevronDown size={14} className={exportDropdownOpen ? 'rotate-180' : ''} />
+                </button>
+                {exportDropdownOpen && (
+                  <div className="inv-export-menu">
+                    <button
+                      type="button"
+                      className="inv-export-item"
+                      onClick={handleExportValuationPdf}
+                    >
+                      <FileText size={14} style={{ color: 'var(--primary)' }} />
+                      <div>
+                        <strong>Export Valuation PDF</strong>
+                        <small>Landscape audit report with KPI summary</small>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="inv-export-item"
+                      onClick={handleExportValuationCsv}
+                    >
+                      <Download size={14} style={{ color: 'var(--text-secondary)' }} />
+                      <div>
+                        <strong>Export Valuation CSV</strong>
+                        <small>Spreadsheet with batches, status &amp; totals</small>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
               <button className="btn btn-primary" onClick={openAdd}>
                 <Plus size={15} /> Add Item
               </button>
@@ -499,8 +743,32 @@ export default function InventoryPage() {
           }
         />
         <main className="page-body">
-          {/* 5 Clickable Stats Summary Cards */}
-          <div className="inventory-stats-grid">
+          {/* View Mode Navigation Tabs */}
+          <div className="inv-nav-tabs">
+            <button
+              type="button"
+              className={`inv-nav-tab-btn ${activeTab === 'inventory' ? 'active' : ''}`}
+              onClick={() => setActiveTab('inventory')}
+            >
+              <Package size={15} />
+              <span>Stock Master List &amp; Batches</span>
+              <span className="inv-nav-pill">{ingredients.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`inv-nav-tab-btn ${activeTab === 'valuation' ? 'active' : ''}`}
+              onClick={() => setActiveTab('valuation')}
+            >
+              <BarChart3 size={15} />
+              <span>Raw Ingredients &amp; Supplies Valuation Report</span>
+              <span className="inv-nav-pill">{inventoryValuationData.items.length}</span>
+            </button>
+          </div>
+
+          {activeTab === 'inventory' && (
+            <>
+              {/* 5 Clickable Stats Summary Cards */}
+              <div className="inventory-stats-grid">
             {/* 1. All Items */}
             <div
               className={`card card-pad inventory-stat-card ${statusFilter === 'all' ? 'active' : ''}`}
@@ -990,8 +1258,186 @@ export default function InventoryPage() {
               pageSize={PAGE_SIZE}
             />
           </div>
-        </main>
-      </div>
+        </>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
+          VALUATION REPORT VIEW (Transferred from Financial Reports)
+         ════════════════════════════════════════════════════════════ */}
+      {activeTab === 'valuation' && (
+        <div className="card">
+          <div
+            className="card-pad"
+            style={{
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 12,
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>
+                  RAW INGREDIENTS &amp; SUPPLIES VALUATION REPORT
+                </h3>
+                {statusFilter !== 'all' && (
+                  <button
+                    className="filter-active-chip"
+                    onClick={() => handleStatusFilterChange(statusFilter)}
+                    title={`Clear ${statusFilterLabels[statusFilter]} filter`}
+                  >
+                    <span>Showing: {statusFilterLabels[statusFilter]} ({filteredValuationItems.length})</span>
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                Batch-weighted inventory balances, unit cost valuation, and FEFO stock status ({filteredValuationItems.length} of {ingredients.length} items)
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="badge badge-primary" style={{ fontWeight: 700 }}>
+                Valuation: ₱
+                {inventoryValuationData.totalValue.toLocaleString('en-PH', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+              <span className="badge badge-neutral">
+                Ingredients: ₱
+                {inventoryValuationData.ingredientsValue.toLocaleString('en-PH', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+              <span className="badge badge-neutral">
+                Supplies: ₱
+                {inventoryValuationData.suppliesValue.toLocaleString('en-PH', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+              {inventoryValuationData.lowStockCount > 0 && (
+                <span className="badge badge-warning">
+                  ● {inventoryValuationData.lowStockCount} Low
+                </span>
+              )}
+              {inventoryValuationData.outOfStockCount > 0 && (
+                <span className="badge badge-danger">
+                  ● {inventoryValuationData.outOfStockCount} Out
+                </span>
+              )}
+
+              {/* Inline Quick Export Buttons */}
+              <div style={{ display: 'flex', gap: 6, marginLeft: 4 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleExportValuationPdf}
+                  disabled={isExporting}
+                  title="Export Valuation PDF"
+                >
+                  <FileText size={13} />
+                  <span>PDF</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleExportValuationCsv}
+                  disabled={isExporting}
+                  title="Export Valuation CSV"
+                >
+                  <Download size={13} />
+                  <span>CSV</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {filteredValuationItems.length === 0 ? (
+            <div className="empty-state" style={{ padding: '50px 20px' }}>
+              <Package size={32} />
+              <p>No inventory items match the current filter or search criteria.</p>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Item Name</th>
+                    <th>Category</th>
+                    <th>Unit</th>
+                    <th>Current Stock</th>
+                    <th style={{ textAlign: 'right' }}>Unit Cost</th>
+                    <th style={{ textAlign: 'right' }}>Stock Valuation</th>
+                    <th>Threshold</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedValuationItems.map((item: InventoryItemValuation) => {
+                    return (
+                      <tr key={item.id}>
+                        <td style={{ fontWeight: 600 }}>{item.name}</td>
+                        <td>
+                          <span className="badge badge-neutral">
+                            {item.itemType === 'supply' ? 'Packaging/Supply' : 'Raw Ingredient'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-neutral">{item.unit}</span>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>
+                          {item.stockQuantity} {item.unit}
+                        </td>
+                        <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
+                          ₱
+                          {Number(item.unitCost || 0).toLocaleString('en-PH', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--primary)' }}>
+                          ₱
+                          {item.stockValue.toLocaleString('en-PH', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td style={{ color: 'var(--text-muted)' }}>
+                          {item.lowStockThreshold} {item.unit}
+                        </td>
+                        <td>
+                          {item.status === 'Out of Stock' ? (
+                            <span className="badge badge-danger">● Out of Stock</span>
+                          ) : item.status === 'Low Stock' ? (
+                            <span className="badge badge-warning">● Low Stock</span>
+                          ) : (
+                            <span className="badge badge-success">● In Stock</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <Pagination
+            currentPage={valuationPage}
+            totalPages={totalValuationPages}
+            onPageChange={setValuationPage}
+            totalItems={filteredValuationItems.length}
+            pageSize={PAGE_SIZE}
+          />
+        </div>
+      )}
+    </main>
+  </div>
 
       {/* Restock Item Modal */}
       <AnimatePresence>
