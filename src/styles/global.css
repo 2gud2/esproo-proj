@@ -38,6 +38,7 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  transition: margin-left var(--transition-slow);
 }
 
 .page-body {
@@ -273,7 +274,7 @@ h4 { font-size: 1rem; font-weight: 600; }
 
 /* Responsive */
 @media (max-width: 768px) {
-  .main-content { margin-left: 0; }
+  .main-content { margin-left: 0 !important; transition: none; }
   .page-body { padding: 16px; }
   .sidebar { transform: translateX(-100%); }
   .sidebar.open { transform: translateX(0); }

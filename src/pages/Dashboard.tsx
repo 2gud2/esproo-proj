@@ -266,7 +266,7 @@ export default function DashboardPage() {
       icon: AlertTriangle,
       color: totalStockAlerts > 0 ? '#E65100' : '#2E7D32',
       bg: totalStockAlerts > 0 ? 'rgba(230,81,0,0.1)' : 'rgba(46,125,50,0.1)',
-      route: '/inventory',
+      route: totalStockAlerts > 0 ? (outOfStockCount > 0 ? '/inventory?filter=out' : '/inventory?filter=low') : '/inventory',
     },
     {
       label: 'Top Seller Today',
@@ -411,12 +411,12 @@ export default function DashboardPage() {
             <motion.div className="card" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
               <div className="card-pad section-header">
                 <div>
-                  <h3 className="clickable-title" onClick={() => navigate('/inventory')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <h3 className="clickable-title" onClick={() => navigate('/inventory?filter=low')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     Low-Stock Items <ArrowRight size={14} className="title-arrow" />
                   </h3>
                   <p className="page-subtitle">Matching Inventory alert list</p>
                 </div>
-                <button className="badge-link" onClick={() => navigate('/inventory')}>
+                <button className="badge-link" onClick={() => navigate('/inventory?filter=low')}>
                   <span className={`badge ${totalStockAlerts > 0 ? 'badge-danger' : 'badge-success'}`}>
                     {totalStockAlerts} Alerts
                   </span>
@@ -432,7 +432,7 @@ export default function DashboardPage() {
                   <div
                     key={ing.id}
                     className="low-stock-item clickable"
-                    onClick={() => navigate('/inventory')}
+                    onClick={() => navigate(isOutOfStock(ing) ? '/inventory?filter=out' : '/inventory?filter=low')}
                     title="Click to manage inventory"
                   >
                     <div className="low-stock-icon"><Package size={16} /></div>

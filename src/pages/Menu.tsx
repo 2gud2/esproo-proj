@@ -250,14 +250,18 @@ export default function MenuPage() {
     }
 
     setRecipeRows(
-      recipe.map((r) => ({
-        id: r.id,
-        ingredient_id: r.ingredient_id,
-        quantity_used: r.quantity_used != null ? String(r.quantity_used) : '1',
-        unit: r.unit,
-        size_id: r.size_id || null,
-        usage_scope: r.usage_scope || 'always',
-      }))
+      recipe.map((r) => {
+        const ing = ingredients.find((i) => i.id === r.ingredient_id);
+        return {
+          id: r.id,
+          ingredient_id: r.ingredient_id,
+          quantity_used: r.quantity_used != null ? String(r.quantity_used) : '1',
+          unit: r.unit,
+          size_id: r.size_id || null,
+          usage_scope: r.usage_scope || 'always',
+          item_type: ing?.item_type === 'supply' ? 'supply' : 'ingredient',
+        };
+      })
     );
     setModal('edit');
   }
@@ -425,8 +429,11 @@ export default function MenuPage() {
       }
     }
 
+    // Filter out blank placeholder rows (e.g. unselected auto-suggested rows)
+    const validRecipeRows = recipeRows.filter((r) => r.ingredient_id && r.ingredient_id.trim());
+
     // Validate recipe rows
-    for (const row of recipeRows) {
+    for (const row of validRecipeRows) {
       const q = Number(row.quantity_used) || 0;
       if (q <= 0) {
         toast.error('All recipe quantities must be greater than 0');
@@ -441,13 +448,36 @@ export default function MenuPage() {
 
     // Duplicate detection check
     const seen = new Set<string>();
-    for (const r of recipeRows) {
+    for (const r of validRecipeRows) {
       const key = `${r.ingredient_id}__${r.size_id || 'all'}__${r.usage_scope || 'always'}`;
       if (seen.has(key)) {
         toast.error('Duplicate recipe entries found with the same item, size, and scope.');
         return;
       }
       seen.add(key);
+    }
+
+    // Validation warning: Check if any size has 0 packaging set
+    if (hasSizes) {
+      const supplyIngredientsSet = new Set(
+        ingredients.filter((i) => i.item_type === 'supply').map((i) => i.id)
+      );
+      const supplyRows = validRecipeRows.filter((r) => supplyIngredientsSet.has(r.ingredient_id));
+      const sharedSupplies = supplyRows.filter((r) => !r.size_id);
+
+      for (const s of sizes) {
+        const sizeSupplies = supplyRows.filter(
+          (r) =>
+            r.size_id === s.id ||
+            (s.name && (r.size_id || '').toLowerCase() === s.name.toLowerCase())
+        );
+        if (sharedSupplies.length === 0 && sizeSupplies.length === 0) {
+          toast(`Warning: Size "${s.name}" has no packaging or supplies set`, {
+            icon: '⚠️',
+            duration: 4500,
+          });
+        }
+      }
     }
 
     setSaving(true);
@@ -463,6 +493,7 @@ export default function MenuPage() {
       let defaultPrice = Number(form.price) || 0;
       let formattedSizes: any[] | undefined = undefined;
       const sizeNameToIdMap = new Map<string, string>();
+      const validSizeIds = new Set<string>();
 
       if (hasSizes) {
         const defaultSize = sizes.find((s) => s.is_default) || sizes[0];
@@ -470,6 +501,7 @@ export default function MenuPage() {
         formattedSizes = sizes.map((s, idx) => {
           const sizeId = s.id || crypto.randomUUID();
           sizeNameToIdMap.set(sizeId, sizeId);
+          validSizeIds.add(sizeId);
           if (s.name) {
             sizeNameToIdMap.set(s.name.trim().toLowerCase(), sizeId);
           }
@@ -485,19 +517,32 @@ export default function MenuPage() {
         });
       }
 
-      const formattedRows = recipeRows.map((r) => {
-        let resolvedSizeId: string | null = null;
-        if (hasSizes && r.size_id) {
-          resolvedSizeId = sizeNameToIdMap.get(r.size_id.toLowerCase()) || (r.size_id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) ? r.size_id : null);
-        }
-        return {
-          ingredient_id: r.ingredient_id,
-          quantity_used: Number(r.quantity_used),
-          unit: r.unit,
-          size_id: resolvedSizeId,
-          usage_scope: r.usage_scope || 'always',
-        };
-      });
+      // Format recipe rows: do NOT silently convert deleted size_ids to null (all sizes)
+      const formattedRows = validRecipeRows
+        .filter((r) => {
+          if (hasSizes && r.size_id) {
+            const resolved =
+              sizeNameToIdMap.get(r.size_id.toLowerCase()) ||
+              (validSizeIds.has(r.size_id) ? r.size_id : null);
+            return resolved !== null;
+          }
+          return true;
+        })
+        .map((r) => {
+          let resolvedSizeId: string | null = null;
+          if (hasSizes && r.size_id) {
+            resolvedSizeId =
+              sizeNameToIdMap.get(r.size_id.toLowerCase()) ||
+              (validSizeIds.has(r.size_id) ? r.size_id : null);
+          }
+          return {
+            ingredient_id: r.ingredient_id,
+            quantity_used: Number(r.quantity_used),
+            unit: r.unit,
+            size_id: resolvedSizeId,
+            usage_scope: r.usage_scope || 'always',
+          };
+        });
 
       await saveMenuItemConfig(
         {
@@ -1132,16 +1177,30 @@ export default function MenuPage() {
                   </div>
                 </div>
 
-                {/* Sizes Editor Component */}
+                {/* 2. Ingredients (Recipe) */}
+                <RecipeEditor
+                  section="ingredients"
+                  hasSizes={hasSizes}
+                  sizes={sizes}
+                  ingredients={ingredients}
+                  recipeRows={recipeRows}
+                  onChangeRecipeRows={setRecipeRows}
+                />
+
+                {/* 3. "This item has multiple sizes" (SizesEditor) */}
                 <SizesEditor
                   hasSizes={hasSizes}
                   onToggleHasSizes={setHasSizes}
                   sizes={sizes}
                   onChangeSizes={setSizes}
+                  recipeRows={recipeRows}
+                  onChangeRecipeRows={setRecipeRows}
+                  ingredients={ingredients}
                 />
 
-                {/* Recipe Editor Component */}
+                {/* 4. Packaging & Supplies */}
                 <RecipeEditor
+                  section="supplies"
                   hasSizes={hasSizes}
                   sizes={sizes}
                   ingredients={ingredients}

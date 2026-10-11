@@ -12,6 +12,7 @@ import {
   areUnitsCompatible
 } from '../../lib/unitConversion';
 import toast from 'react-hot-toast';
+import ItemCombobox from '../Common/ItemCombobox';
 
 interface OrderSuppliesModalProps {
   isOpen: boolean;
@@ -276,7 +277,7 @@ export default function OrderSuppliesModal({
                       <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
                         <thead>
                           <tr style={{ background: 'var(--surface-2)' }}>
-                            <th style={{ padding: '10px 14px' }}>Supply / Packaging Item</th>
+                            <th style={{ minWidth: 220, padding: '10px 14px' }}>Supply / Packaging Item</th>
                             <th style={{ width: 100, padding: '10px 12px' }}>Quantity</th>
                             <th style={{ width: 130, padding: '10px 12px' }}>Unit</th>
                             <th style={{ width: 160, padding: '10px 12px' }}>When to Deduct</th>
@@ -292,20 +293,13 @@ export default function OrderSuppliesModal({
 
                             return (
                               <tr key={r.id || idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                                <td style={{ padding: '8px 14px' }}>
-                                  <select
+                                <td style={{ minWidth: 220, padding: '8px 14px' }}>
+                                  <ItemCombobox
+                                    items={suppliesPool}
                                     value={r.ingredient_id}
-                                    onChange={(e) => updateRow(idx, 'ingredient_id', e.target.value)}
-                                    className="input select"
-                                    style={{ padding: '6px 30px 6px 10px', fontSize: '0.84rem' }}
-                                    required
-                                  >
-                                    {suppliesPool.map((s) => (
-                                      <option key={s.id} value={s.id}>
-                                        {s.name} ({s.unit} — ₱{(s.cost_per_unit ?? 0).toFixed(2)}/{s.unit})
-                                      </option>
-                                    ))}
-                                  </select>
+                                    onChange={(newId) => updateRow(idx, 'ingredient_id', newId)}
+                                    placeholder="Select supply item..."
+                                  />
                                 </td>
                                 <td style={{ padding: '8px 12px' }}>
                                   <input

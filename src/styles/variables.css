@@ -30,9 +30,27 @@
   --info-bg: #E3F2FD;
 
   /* Sidebar */
-  --sidebar-width: 240px;
+  --sidebar-width-expanded: 240px;
+  --sidebar-width-collapsed: 72px;
+  --sidebar-width: var(--sidebar-width-expanded);
   --sidebar-collapsed: 0px;
   --topbar-height: 64px;
+}
+
+/* Sidebar collapsed state global override */
+html.sidebar-collapsed,
+html[data-sidebar-collapsed="true"] {
+  --sidebar-width: var(--sidebar-width-collapsed);
+}
+
+@media (max-width: 768px) {
+  html.sidebar-collapsed,
+  html[data-sidebar-collapsed="true"] {
+    --sidebar-width: var(--sidebar-width-expanded);
+  }
+}
+
+:root {
 
   /* Typography */
   --font: 'Hanken Grotesk', 'Inter', system-ui, sans-serif;

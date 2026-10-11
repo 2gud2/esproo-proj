@@ -289,3 +289,101 @@
   color: #0284c7;
 }
 
+/* ─── 5-Column Clickable Stat Cards Filter Grid ─── */
+.inventory-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 1200px) {
+  .inventory-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .inventory-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .inventory-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Interactive Card Styles */
+.inventory-stat-card {
+  cursor: pointer;
+  user-select: none;
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition), background var(--transition);
+  border: 1.5px solid var(--border-light);
+  outline: none;
+  position: relative;
+}
+
+.inventory-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(148, 58, 31, 0.35);
+}
+
+.inventory-stat-card:focus-visible {
+  box-shadow: 0 0 0 3px var(--primary-muted);
+}
+
+.inventory-stat-card.active {
+  border-color: var(--primary);
+  background: var(--primary-muted);
+  box-shadow: 0 4px 14px rgba(148, 58, 31, 0.14);
+}
+
+.inventory-stat-card .stat-sub {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.inventory-stat-card .stat-value {
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.inventory-stat-card .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Active Filter Header Chip */
+.filter-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.filter-active-chip:hover {
+  background: var(--primary-dark);
+  transform: scale(1.03);
+}
+

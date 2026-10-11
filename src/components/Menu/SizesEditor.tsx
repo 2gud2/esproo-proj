@@ -1,6 +1,10 @@
 import React from 'react';
 import { Plus, Trash2, HelpCircle } from 'lucide-react';
 
+import type { RecipeEditorRow } from './RecipeEditor';
+import type { Ingredient } from '../../lib/mockData';
+import { evaluateSupplyMatch, createSupplyRow } from '../../lib/supplySuggestions';
+
 export interface SizeRow {
   id?: string;
   name: string;
@@ -16,6 +20,9 @@ interface SizesEditorProps {
   onToggleHasSizes: (hasSizes: boolean) => void;
   sizes: SizeRow[];
   onChangeSizes: (sizes: SizeRow[]) => void;
+  recipeRows?: RecipeEditorRow[];
+  onChangeRecipeRows?: (rows: RecipeEditorRow[]) => void;
+  ingredients?: Ingredient[];
 }
 
 const QUICK_SIZE_CHIPS = ['Small', 'Medium', 'Large', '12oz', '16oz', 'Regular'];
@@ -25,13 +32,51 @@ export default function SizesEditor({
   onToggleHasSizes,
   sizes,
   onChangeSizes,
+  recipeRows = [],
+  onChangeRecipeRows,
+  ingredients = [],
 }: SizesEditorProps) {
+  const supplyItems = ingredients.filter((i) => i.item_type === 'supply');
+
+  function getAutoSupplyRow(sizeId: string, sizeName: string): RecipeEditorRow {
+    const { confidentMatch } = evaluateSupplyMatch(sizeName, supplyItems);
+    return createSupplyRow(sizeId, confidentMatch);
+  }
+
   function handleToggle(enabled: boolean) {
-    onToggleHasSizes(enabled);
-    if (enabled && sizes.length === 0) {
-      onChangeSizes([
+    if (!enabled) {
+      if (recipeRows.length > 0 && onChangeRecipeRows) {
+        const sizeScopedRows = recipeRows.filter((r) => r.size_id);
+        if (sizeScopedRows.length > 0) {
+          const confirmed = window.confirm(
+            `Disabling multiple sizes will remove size-specific packaging and reset the recipe to a single standard size. Are you sure?`
+          );
+          if (!confirmed) return;
+        }
+
+        // Deduplicate and reset size_id to null
+        const seen = new Set<string>();
+        const resetRows: RecipeEditorRow[] = [];
+        for (const r of recipeRows) {
+          const key = `${r.ingredient_id}__${r.usage_scope || 'always'}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            resetRows.push({ ...r, size_id: null });
+          }
+        }
+        onChangeRecipeRows(resetRows);
+      }
+      onToggleHasSizes(false);
+      return;
+    }
+
+    onToggleHasSizes(true);
+    if (sizes.length === 0) {
+      const regId = crypto.randomUUID();
+      const lrgId = crypto.randomUUID();
+      const initialSizes: SizeRow[] = [
         {
-          id: crypto.randomUUID(),
+          id: regId,
           name: 'Regular',
           price: '',
           ingredient_multiplier: '1.0',
@@ -39,34 +84,57 @@ export default function SizesEditor({
           is_default: true,
         },
         {
-          id: crypto.randomUUID(),
+          id: lrgId,
           name: 'Large',
           price: '',
           ingredient_multiplier: '1.5',
           sort_order: 1,
           is_default: false,
         },
-      ]);
+      ];
+      onChangeSizes(initialSizes);
+
+      // Auto-create initial supply rows for Regular and Large
+      if (onChangeRecipeRows) {
+        const newSupplyRows: RecipeEditorRow[] = [];
+        if (!recipeRows.some((r) => r.size_id === regId)) {
+          newSupplyRows.push(getAutoSupplyRow(regId, 'Regular'));
+        }
+        if (!recipeRows.some((r) => r.size_id === lrgId)) {
+          newSupplyRows.push(getAutoSupplyRow(lrgId, 'Large'));
+        }
+        if (newSupplyRows.length > 0) {
+          onChangeRecipeRows([...recipeRows, ...newSupplyRows]);
+        }
+      }
     }
   }
 
-  function addSize() {
+  function addSize(nameOverride?: string) {
     if (sizes.length >= 6) return;
     const newSortOrder = sizes.length;
-    onChangeSizes([
-      ...sizes,
-      {
-        id: crypto.randomUUID(),
-        name: `Size ${sizes.length + 1}`,
-        price: '',
-        ingredient_multiplier: '1.0',
-        sort_order: newSortOrder,
-        is_default: sizes.length === 0,
-      },
-    ]);
+    const newId = crypto.randomUUID();
+    const sizeName = nameOverride || `Size ${sizes.length + 1}`;
+    const newSize: SizeRow = {
+      id: newId,
+      name: sizeName,
+      price: '',
+      ingredient_multiplier: sizeName.toLowerCase().includes('large') ? '1.5' : '1.0',
+      sort_order: newSortOrder,
+      is_default: sizes.length === 0,
+    };
+
+    onChangeSizes([...sizes, newSize]);
+
+    // Auto-create a supply row for this size if not exists
+    if (onChangeRecipeRows) {
+      const autoRow = getAutoSupplyRow(newId, sizeName);
+      onChangeRecipeRows([...recipeRows, autoRow]);
+    }
   }
 
   function updateSize(index: number, field: keyof SizeRow, value: any) {
+    const targetSize = sizes[index];
     const next = sizes.map((s, i) => {
       if (i !== index) {
         if (field === 'is_default' && value === true) {
@@ -77,13 +145,45 @@ export default function SizesEditor({
       return { ...s, [field]: value };
     });
     onChangeSizes(next);
+
+    // If size name is updated and that size has an unedited/empty supply row, re-evaluate suggestions
+    if (field === 'name' && targetSize?.id && onChangeRecipeRows && typeof value === 'string') {
+      const emptyRowIdx = recipeRows.findIndex(
+        (r) => r.size_id === targetSize.id && !r.ingredient_id
+      );
+      if (emptyRowIdx >= 0) {
+        const { confidentMatch } = evaluateSupplyMatch(value, supplyItems);
+        if (confidentMatch) {
+          const updatedRows = recipeRows.map((r, i) =>
+            i === emptyRowIdx
+              ? { ...r, ingredient_id: confidentMatch.id, unit: confidentMatch.unit }
+              : r
+          );
+          onChangeRecipeRows(updatedRows);
+        }
+      }
+    }
   }
 
   function removeSize(index: number) {
     if (sizes.length <= 1) return;
+    const sizeToRemove = sizes[index];
+
+    // Check for recipe rows scoped to this size
+    if (onChangeRecipeRows && sizeToRemove?.id) {
+      const scopedRows = recipeRows.filter((r) => r.size_id === sizeToRemove.id);
+      if (scopedRows.length > 0) {
+        const confirmed = window.confirm(
+          `Size "${sizeToRemove.name}" has ${scopedRows.length} recipe/packaging item(s) configured. Removing this size will also remove those items. Are you sure?`
+        );
+        if (!confirmed) return;
+        onChangeRecipeRows(recipeRows.filter((r) => r.size_id !== sizeToRemove.id));
+      }
+    }
+
     const next = sizes.filter((_, i) => i !== index);
     // If we removed the default size, make first one default
-    if (!next.some(s => s.is_default) && next.length > 0) {
+    if (!next.some((s) => s.is_default) && next.length > 0) {
       next[0].is_default = true;
     }
     onChangeSizes(next);
@@ -123,17 +223,7 @@ export default function SizesEditor({
                   if (emptyIdx >= 0) {
                     updateSize(emptyIdx, 'name', chip);
                   } else if (sizes.length < 6) {
-                    onChangeSizes([
-                      ...sizes,
-                      {
-                        id: crypto.randomUUID(),
-                        name: chip,
-                        price: '',
-                        ingredient_multiplier: chip.toLowerCase().includes('large') ? '1.5' : '1.0',
-                        sort_order: sizes.length,
-                        is_default: sizes.length === 0,
-                      },
-                    ]);
+                    addSize(chip);
                   }
                 }}
               >
@@ -229,7 +319,7 @@ export default function SizesEditor({
           {sizes.length < 6 && (
             <button
               type="button"
-              onClick={addSize}
+              onClick={() => addSize()}
               className="add-size-btn"
             >
               <Plus size={15} /> Add Another Size

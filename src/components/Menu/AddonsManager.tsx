@@ -17,6 +17,7 @@ import {
   areUnitsCompatible
 } from '../../lib/unitConversion';
 import toast from 'react-hot-toast';
+import ItemCombobox from '../Common/ItemCombobox';
 
 interface AddonsManagerProps {
   ingredients: Ingredient[];
@@ -546,7 +547,7 @@ export default function AddonsManager({
                       <table className="addon-recipe-table">
                         <thead>
                           <tr>
-                            <th>Inventory Item</th>
+                            <th style={{ minWidth: 220 }}>Inventory Item</th>
                             <th style={{ width: '100px' }}>Quantity</th>
                             <th style={{ width: '130px' }}>Unit</th>
                             <th style={{ width: '90px' }}>Cost</th>
@@ -561,20 +562,13 @@ export default function AddonsManager({
 
                             return (
                               <tr key={r.id || idx}>
-                                <td>
-                                  <select
+                                <td style={{ minWidth: 220 }}>
+                                  <ItemCombobox
+                                    items={ingredients}
                                     value={r.ingredient_id}
-                                    onChange={(e) => updateRecipeRow(idx, 'ingredient_id', e.target.value)}
-                                    className="input select"
-                                    style={{ padding: '6px 8px', fontSize: '0.8rem' }}
-                                    required
-                                  >
-                                    {ingredients.map((i) => (
-                                      <option key={i.id} value={i.id}>
-                                        {i.name} ({i.unit} — ₱{(i.cost_per_unit ?? 0).toFixed(2)}/{i.unit})
-                                      </option>
-                                    ))}
-                                  </select>
+                                    onChange={(newId) => updateRecipeRow(idx, 'ingredient_id', newId)}
+                                    placeholder="Select inventory item..."
+                                  />
                                 </td>
                                 <td>
                                   <input

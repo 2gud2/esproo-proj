@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Edit2, X, Trash2, Calendar,
@@ -48,6 +49,15 @@ export const COFFEE_SHOP_UNITS = [
 ];
 
 type ItemTypeFilter = 'all' | 'ingredient' | 'supply';
+export type StatusFilter = 'all' | 'low' | 'out' | 'near_expiry' | 'expired';
+
+export const statusFilterLabels: Record<StatusFilter, string> = {
+  all: 'All Items',
+  low: 'Low Stock',
+  out: 'Out of Stock',
+  near_expiry: 'Near Expiry',
+  expired: 'Expired',
+};
 
 const defaultForm = {
   name: '',
@@ -76,12 +86,44 @@ const defaultEditBatchForm = {
 };
 
 export default function InventoryPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [batches, setBatches] = useState<IngredientBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [itemTypeFilter, setItemTypeFilter] = useState<ItemTypeFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    const q = searchParams.get('filter');
+    if (q && ['all', 'low', 'out', 'near_expiry', 'expired'].includes(q)) {
+      return q as StatusFilter;
+    }
+    return 'all';
+  });
   const [page, setPage] = useState(1);
+
+  // Sync statusFilter if query param changes
+  useEffect(() => {
+    const q = searchParams.get('filter');
+    if (q && ['all', 'low', 'out', 'near_expiry', 'expired'].includes(q)) {
+      setStatusFilter(q as StatusFilter);
+    } else if (!q) {
+      setStatusFilter('all');
+    }
+  }, [searchParams]);
+
+  function handleStatusFilterChange(filter: StatusFilter) {
+    setStatusFilter(prev => {
+      const next = prev === filter ? 'all' : filter;
+      const newParams = new URLSearchParams(searchParams);
+      if (next === 'all') {
+        newParams.delete('filter');
+      } else {
+        newParams.set('filter', next);
+      }
+      setSearchParams(newParams, { replace: true });
+      return next;
+    });
+  }
 
   // Expanded rows for batch breakdown
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -201,15 +243,33 @@ export default function InventoryPage() {
     return { label: 'OK', badgeClass: 'badge-success' };
   }
 
-  // Filtered inventory items
+  // Helpers ensuring 100% identical logic for card counts AND filtered table rows
+  const isItemNearExpiry = (i: Ingredient) => {
+    const exp = getExpirationInfo(i.expiration_date);
+    return exp.status === 'near_expiry' && i.stock_quantity > 0;
+  };
+
+  const isItemExpired = (i: Ingredient) => {
+    const exp = getExpirationInfo(i.expiration_date);
+    return (exp.status === 'expired' || exp.status === 'expired_today') && i.stock_quantity > 0;
+  };
+
+  // Filtered inventory items combining statusFilter, itemTypeFilter, and search
   const filtered = useMemo(() => ingredients.filter(i => {
     const itemType = i.item_type || 'ingredient';
     if (itemTypeFilter !== 'all' && itemType !== itemTypeFilter) return false;
-    return i.name.toLowerCase().includes(search.toLowerCase()) ||
-           i.unit.toLowerCase().includes(search.toLowerCase());
-  }), [ingredients, itemTypeFilter, search]);
 
-  useEffect(() => { setPage(1); }, [search, itemTypeFilter]);
+    if (statusFilter === 'low' && !isLowStock(i)) return false;
+    if (statusFilter === 'out' && !isOutOfStock(i)) return false;
+    if (statusFilter === 'near_expiry' && !isItemNearExpiry(i)) return false;
+    if (statusFilter === 'expired' && !isItemExpired(i)) return false;
+
+    const query = search.toLowerCase();
+    return i.name.toLowerCase().includes(query) ||
+           i.unit.toLowerCase().includes(query);
+  }), [ingredients, itemTypeFilter, statusFilter, search]);
+
+  useEffect(() => { setPage(1); }, [search, itemTypeFilter, statusFilter]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
   const paginatedIngredients = useMemo(() => {
@@ -220,22 +280,11 @@ export default function InventoryPage() {
   const ingredientCount = useMemo(() => ingredients.filter(i => (i.item_type || 'ingredient') === 'ingredient').length, [ingredients]);
   const supplyCount = useMemo(() => ingredients.filter(i => i.item_type === 'supply').length, [ingredients]);
 
-  // Summary counts using unified stockStatus helpers
-  const lowCount = ingredients.filter(isLowStock).length;
-  const outCount = ingredients.filter(isOutOfStock).length;
-  const totalStockAlerts = lowCount + outCount;
-
-  const expiredCount = ingredients.filter(i => {
-    const exp = getExpirationInfo(i.expiration_date);
-    return (exp.status === 'expired' || exp.status === 'expired_today') && i.stock_quantity > 0;
-  }).length;
-
-  const nearExpiryCount = ingredients.filter(i => {
-    const exp = getExpirationInfo(i.expiration_date);
-    return exp.status === 'near_expiry' && i.stock_quantity > 0;
-  }).length;
-
-  const totalExpiryAlerts = expiredCount + nearExpiryCount;
+  // Global counts for stat cards (never change when a filter is active)
+  const lowCount = useMemo(() => ingredients.filter(isLowStock).length, [ingredients]);
+  const outCount = useMemo(() => ingredients.filter(isOutOfStock).length, [ingredients]);
+  const expiredCount = useMemo(() => ingredients.filter(isItemExpired).length, [ingredients]);
+  const nearExpiryCount = useMemo(() => ingredients.filter(isItemNearExpiry).length, [ingredients]);
 
   function openAdd() {
     setForm({
@@ -450,26 +499,109 @@ export default function InventoryPage() {
           }
         />
         <main className="page-body">
-          {/* Stats Summary Cards */}
-          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 20 }}>
-            <div className="card card-pad">
-              <div className="stat-sub">Total Inventory Items</div>
-              <div className="stat-value" style={{ fontSize: '1.5rem' }}>{ingredients.length}</div>
+          {/* 5 Clickable Stats Summary Cards */}
+          <div className="inventory-stats-grid">
+            {/* 1. All Items */}
+            <div
+              className={`card card-pad inventory-stat-card ${statusFilter === 'all' ? 'active' : ''}`}
+              onClick={() => handleStatusFilterChange('all')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleStatusFilterChange('all');
+                }
+              }}
+              title={statusFilter === 'all' ? 'Showing all inventory items' : 'Filter by all items'}
+            >
+              <div className="stat-sub">All Items</div>
+              <div className="stat-value">{ingredients.length}</div>
               <div className="stat-label">{ingredientCount} ingredients · {supplyCount} supplies</div>
             </div>
-            <div className="card card-pad">
-              <div className="stat-sub">Stock Alerts</div>
-              <div className="stat-value" style={{ fontSize: '1.5rem', color: totalStockAlerts > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
-                {totalStockAlerts}
+
+            {/* 2. Low Stock */}
+            <div
+              className={`card card-pad inventory-stat-card ${statusFilter === 'low' ? 'active' : ''}`}
+              onClick={() => handleStatusFilterChange('low')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleStatusFilterChange('low');
+                }
+              }}
+              title={statusFilter === 'low' ? 'Click to clear filter' : 'Filter by Low Stock'}
+            >
+              <div className="stat-sub">Low Stock</div>
+              <div className="stat-value" style={{ color: lowCount > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>
+                {lowCount}
               </div>
-              <div className="stat-label">{lowCount} low · {outCount} out</div>
+              <div className="stat-label">Below threshold</div>
             </div>
-            <div className="card card-pad">
-              <div className="stat-sub">Expired / Near Expiry</div>
-              <div className="stat-value" style={{ fontSize: '1.5rem', color: totalExpiryAlerts > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
-                {totalExpiryAlerts}
+
+            {/* 3. Out of Stock */}
+            <div
+              className={`card card-pad inventory-stat-card ${statusFilter === 'out' ? 'active' : ''}`}
+              onClick={() => handleStatusFilterChange('out')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleStatusFilterChange('out');
+                }
+              }}
+              title={statusFilter === 'out' ? 'Click to clear filter' : 'Filter by Out of Stock'}
+            >
+              <div className="stat-sub">Out of Stock</div>
+              <div className="stat-value" style={{ color: outCount > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
+                {outCount}
               </div>
-              <div className="stat-label">{expiredCount} expired · {nearExpiryCount} near expiry</div>
+              <div className="stat-label">0 remaining stock</div>
+            </div>
+
+            {/* 4. Near Expiry */}
+            <div
+              className={`card card-pad inventory-stat-card ${statusFilter === 'near_expiry' ? 'active' : ''}`}
+              onClick={() => handleStatusFilterChange('near_expiry')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleStatusFilterChange('near_expiry');
+                }
+              }}
+              title={statusFilter === 'near_expiry' ? 'Click to clear filter' : 'Filter by Near Expiry'}
+            >
+              <div className="stat-sub">Near Expiry</div>
+              <div className="stat-value" style={{ color: nearExpiryCount > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>
+                {nearExpiryCount}
+              </div>
+              <div className="stat-label">Expiring in 7 days</div>
+            </div>
+
+            {/* 5. Expired */}
+            <div
+              className={`card card-pad inventory-stat-card ${statusFilter === 'expired' ? 'active' : ''}`}
+              onClick={() => handleStatusFilterChange('expired')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleStatusFilterChange('expired');
+                }
+              }}
+              title={statusFilter === 'expired' ? 'Click to clear filter' : 'Filter by Expired'}
+            >
+              <div className="stat-sub">Expired</div>
+              <div className="stat-value" style={{ color: expiredCount > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
+                {expiredCount}
+              </div>
+              <div className="stat-label">Past expiration date</div>
             </div>
           </div>
 
@@ -478,9 +610,23 @@ export default function InventoryPage() {
             {/* Header with Title and Filter Tabs */}
             <div className="card-pad" style={{ borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>INVENTORY MASTER LIST</h3>
-                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>INVENTORY MASTER LIST</h3>
+                  {statusFilter !== 'all' && (
+                    <button
+                      className="filter-active-chip"
+                      onClick={() => handleStatusFilterChange(statusFilter)}
+                      title={`Clear ${statusFilterLabels[statusFilter]} filter`}
+                    >
+                      <span>Showing: {statusFilterLabels[statusFilter]} ({filtered.length})</span>
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+                <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  {statusFilter !== 'all'
+                    ? `Showing ${filtered.length} of ${ingredients.length} total items (${statusFilterLabels[statusFilter].toLowerCase()})`
+                    : `Showing ${filtered.length} of ${ingredients.length} total items`}
                 </p>
               </div>
 
@@ -518,6 +664,36 @@ export default function InventoryPage() {
               {loading ? (
                 <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                   <span className="spinner-sm" style={{ marginRight: 8 }} /> Loading inventory and batches...
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="empty-state" style={{ padding: '60px 20px' }}>
+                  <Package size={40} style={{ opacity: 0.4, color: 'var(--text-muted)' }} />
+                  <div style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--text-primary)' }}>
+                    No items match this filter
+                  </div>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+                    {statusFilter !== 'all'
+                      ? `There are no ${statusFilterLabels[statusFilter].toLowerCase()} items matching your criteria.`
+                      : 'No inventory items match your search.'}
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    {statusFilter !== 'all' && (
+                      <button
+                        className="btn btn-sm btn-primary"
+                        onClick={() => handleStatusFilterChange(statusFilter)}
+                      >
+                        Clear filter
+                      </button>
+                    )}
+                    {search && (
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => setSearch('')}
+                      >
+                        Clear search
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <table className="table">

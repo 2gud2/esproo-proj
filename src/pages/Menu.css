@@ -862,6 +862,11 @@
   vertical-align: middle;
 }
 
+.recipe-editor-table th:first-child,
+.recipe-editor-table td:first-child {
+  min-width: 220px;
+}
+
 .duplicate-recipe-row {
   background: rgba(239, 68, 68, 0.06);
 }
@@ -905,6 +910,189 @@
 
 .recipe-row-remove-btn:hover {
   color: var(--danger);
+}
+
+.table-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.recipe-row-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  transition: color var(--transition), background-color var(--transition);
+}
+
+.recipe-row-action-btn:hover {
+  color: var(--primary);
+  background: var(--surface-2);
+}
+
+/* ─── Per-Size Packaging Panels ─── */
+.per-size-supplies-wrapper {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.per-size-supplies-intro {
+  margin-bottom: 2px;
+}
+
+.per-size-intro-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.per-size-intro-desc {
+  margin: 3px 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.supply-size-group-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.shared-supplies-card {
+  border-left: 3px solid var(--primary);
+}
+
+.unassigned-supplies-card {
+  border-left: 3px solid var(--warning);
+}
+
+.supply-size-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.supply-size-title-area {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.supply-size-icon {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.supply-size-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.size-price-tag-sm {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-muted);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.supply-size-subtitle {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.supply-size-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.copy-supplies-select {
+  height: 30px;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+
+.copy-supplies-select:focus {
+  border-color: var(--primary);
+}
+
+.supply-suggestions-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 10px;
+}
+
+.suggestions-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.suggestions-chips-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.supply-suggestion-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 12px;
+  border: 1px solid var(--primary);
+  background: var(--primary-muted);
+  color: var(--primary);
+  cursor: pointer;
+  transition: all var(--transition);
+  display: inline-flex;
+  align-items: center;
+}
+
+.supply-suggestion-chip:hover {
+  background: var(--primary);
+  color: #fff;
 }
 
 /* ─── Live Cost & Margin Analysis Dashboard ─── */

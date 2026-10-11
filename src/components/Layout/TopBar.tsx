@@ -134,9 +134,13 @@ export default function TopBar({ title, searchPlaceholder, onSearch, action }: T
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  function handleAlertClick() {
+  function handleAlertClick(alert?: AlertItem) {
     setShowNotifs(false);
-    navigate('/inventory');
+    if (alert?.type) {
+      navigate(`/inventory?filter=${alert.type}`);
+    } else {
+      navigate('/inventory');
+    }
   }
 
   return (
@@ -215,7 +219,7 @@ export default function TopBar({ title, searchPlaceholder, onSearch, action }: T
                       <div
                         key={alert.id}
                         className="notif-item"
-                        onClick={handleAlertClick}
+                        onClick={() => handleAlertClick(alert)}
                       >
                         <div className="notif-icon-box">
                           {alert.type === 'out' || alert.type === 'expired' ? (
@@ -242,7 +246,7 @@ export default function TopBar({ title, searchPlaceholder, onSearch, action }: T
                 </div>
 
                 {alerts.length > 0 && (
-                  <div className="popover-footer" onClick={handleAlertClick}>
+                  <div className="popover-footer" onClick={() => handleAlertClick()}>
                     <span>Manage in Inventory</span>
                     <ChevronRight size={14} />
                   </div>
