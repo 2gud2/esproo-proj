@@ -22,7 +22,14 @@ import {
   refundSaleNoRestoration
 } from '../lib/db';
 import { calculateIngredientCost } from '../lib/unitConversion';
-import { startOfDayLocal, endOfDayLocal } from '../lib/dateUtils';
+import {
+  startOfDayLocal,
+  endOfDayLocal,
+  formatLocalDate,
+  getPresetDateRange,
+  DATE_PRESET_OPTIONS,
+  type DatePresetKey,
+} from '../lib/dateUtils';
 import { isOutOfStock, isLowStock, getExpirationInfo } from '../lib/stockStatus';
 import type { FullReportData } from '../lib/reportExport';
 import {
@@ -35,6 +42,7 @@ import {
   exportTabPdf,
   exportFullReportPdf,
   getPeriodFilenameSlug,
+  buildPeriodCoveredString,
   formatAccountingNumber,
 } from '../lib/reportExport';
 import { format } from 'date-fns';
@@ -49,6 +57,7 @@ export default function ReportsPage() {
   const { user, loading: authLoading } = useAuth();
 
   const [tab, setTab] = useState<Tab>('sales');
+  const [datePreset, setDatePreset] = useState<DatePresetKey>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'voided' | 'refunded'>('all');
@@ -234,10 +243,28 @@ export default function ReportsPage() {
     fetchReportsData();
   }, []);
 
+  function handleSelectPreset(preset: DatePresetKey) {
+    setDatePreset(preset);
+    if (preset === 'all') {
+      setDateFrom('');
+      setDateTo('');
+    } else if (preset === 'custom') {
+      if (!dateFrom && !dateTo) {
+        const todayStr = formatLocalDate(new Date());
+        setDateFrom(todayStr);
+        setDateTo(todayStr);
+      }
+    } else {
+      const range = getPresetDateRange(preset);
+      setDateFrom(range.dateFrom);
+      setDateTo(range.dateTo);
+    }
+  }
+
   // Reset page when filters change
   useEffect(() => {
     setSalesPage(1);
-  }, [dateFrom, dateTo, statusFilter, orderTypeFilter, tab]);
+  }, [dateFrom, dateTo, datePreset, statusFilter, orderTypeFilter, tab]);
 
   useEffect(() => {
     setInventoryPage(1);
@@ -865,6 +892,8 @@ export default function ReportsPage() {
       meta: {
         dateFrom,
         dateTo,
+        datePreset,
+        periodLabel: buildPeriodCoveredString({ dateFrom, dateTo, datePreset }),
         statusFilter,
         orderTypeFilter,
         generatedBy: user?.name || user?.email || 'Administrator',
@@ -907,6 +936,7 @@ export default function ReportsPage() {
   }, [
     dateFrom,
     dateTo,
+    datePreset,
     statusFilter,
     orderTypeFilter,
     user,
@@ -1206,52 +1236,76 @@ export default function ReportsPage() {
               flexWrap: 'wrap',
             }}
           >
+            {/* Date Preset Filter + Custom Date Range */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
-                flexWrap: 'nowrap',
-                whiteSpace: 'nowrap',
+                gap: 12,
+                flexWrap: 'wrap',
               }}
             >
-              <span
-                style={{
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
-                  color: 'var(--text-secondary)',
-                  flexShrink: 0,
-                }}
-              >
-                Date Range:
-              </span>
-              <input
-                type="date"
-                className="input"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                style={{ width: 145, flexShrink: 0 }}
-              />
-              <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>to</span>
-              <input
-                type="date"
-                className="input"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                style={{ width: 145, flexShrink: 0 }}
-              />
-              {(dateFrom || dateTo) && (
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    setDateFrom('');
-                    setDateTo('');
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                <span
+                  style={{
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    color: 'var(--text-secondary)',
                   }}
-                  style={{ flexShrink: 0 }}
                 >
-                  <X size={13} /> Clear Date
-                </button>
-              )}
+                  Date:
+                </span>
+                <div className="period-tabs">
+                  {DATE_PRESET_OPTIONS.map((preset) => (
+                    <button
+                      key={preset.key}
+                      className={`period-tab${datePreset === preset.key ? ' active' : ''}`}
+                      onClick={() => handleSelectPreset(preset.key)}
+                      type="button"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Date pickers (always interactive and synchronized with active preset) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <input
+                  type="date"
+                  className="input"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    setDatePreset('custom');
+                  }}
+                  style={{ width: 135 }}
+                  title="Start Date"
+                />
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>to</span>
+                <input
+                  type="date"
+                  className="input"
+                  value={dateTo}
+                  onChange={(e) => {
+                    setDateTo(e.target.value);
+                    setDatePreset('custom');
+                  }}
+                  style={{ width: 135 }}
+                  title="End Date"
+                />
+                {(dateFrom || dateTo || datePreset !== 'all') && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => handleSelectPreset('all')}
+                    style={{ flexShrink: 0, padding: '4px 8px', fontSize: '0.8125rem' }}
+                    title="Reset to All Time"
+                    type="button"
+                  >
+                    <X size={13} /> Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             {tab === 'sales' && (
