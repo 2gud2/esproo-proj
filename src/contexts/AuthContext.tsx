@@ -75,11 +75,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('profiles')
         .select('name, role, status')
         .eq('id', supaUser.id)
-        .single();
+        .maybeSingle();
 
       if (data && !error) {
         if (data.name) name = data.name;
         if (data.role) role = data.role as Role;
+      } else {
+        // Also check employees table
+        try {
+          const { data: empData } = await supabase
+            .from('employees')
+            .select('name, role')
+            .eq('user_id', supaUser.id)
+            .maybeSingle();
+
+          if (empData) {
+            if (empData.name) name = empData.name;
+            if (empData.role?.toLowerCase().includes('manager')) role = 'admin';
+          }
+        } catch (_) {}
       }
     } catch (_) {}
 
@@ -95,20 +109,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signIn(email: string, password: string): Promise<{ error: string | null }> {
-    const formattedEmail = email.trim().toLowerCase();
+    const rawInput = email.trim().toLowerCase();
+    const lookupEmail = rawInput.includes('@') ? rawInput : `${rawInput}@espro.ph`;
 
     // First try live Supabase Auth if keys present
     if (!isMockMode) {
       let { data, error } = await supabase.auth.signInWithPassword({
-        email: formattedEmail,
+        email: lookupEmail,
         password,
       });
 
       if (error && error.message.toLowerCase().includes('email not confirmed')) {
-        const confirmed = await adminAutoConfirmUser(formattedEmail);
+        const confirmed = await adminAutoConfirmUser(lookupEmail);
         if (confirmed) {
           const retry = await supabase.auth.signInWithPassword({
-            email: formattedEmail,
+            email: lookupEmail,
             password,
           });
           data = retry.data;
@@ -116,26 +131,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (error) {
-        return { error: error.message || 'Invalid email or password.' };
-      }
-
-      if (data.user) {
+      if (!error && data.user) {
         await fetchProfile(data.user);
         return { error: null };
       }
-
-      return { error: 'Invalid email or password.' };
     }
 
-    // Fallback to local dynamic user registry
+    // Fallback to local dynamic user registry (offline / local accounts)
     const storedUsersJson = localStorage.getItem('espro_dynamic_users');
     const dynamicUsers = storedUsersJson ? JSON.parse(storedUsersJson) : [];
 
-    const found = dynamicUsers.find((u: any) => u.email.toLowerCase() === formattedEmail);
+    const found = dynamicUsers.find((u: any) =>
+      u.email?.toLowerCase() === lookupEmail ||
+      u.email?.toLowerCase() === rawInput ||
+      u.name?.toLowerCase() === rawInput
+    );
+
     if (found) {
       if (found.status === 'disabled') {
         return { error: 'Account has been disabled by System Administrator.' };
+      }
+      if (found.password && found.password !== password) {
+        return { error: 'Invalid email or password.' };
       }
 
       const loggedUser: AuthUser = {
@@ -151,19 +168,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Default demo account fallback
-    if (formattedEmail === 'admin@espro.ph' && password === 'admin123') {
+    if ((lookupEmail === 'admin@espro.ph' || rawInput === 'admin') && password === 'admin123') {
       const adminUser: AuthUser = { id: 'demo-admin', email: 'admin@espro.ph', name: 'Admin User', role: 'admin' };
       setUser(adminUser);
       localStorage.setItem('espro_active_user', JSON.stringify(adminUser));
       return { error: null };
     }
 
-    if (formattedEmail === 'staff@espro.ph' && password === 'staff123') {
+    if ((lookupEmail === 'staff@espro.ph' || rawInput === 'staff') && password === 'staff123') {
       const staffUser: AuthUser = { id: 'demo-staff', email: 'staff@espro.ph', name: 'Staff User', role: 'employee' };
       setUser(staffUser);
       localStorage.setItem('espro_active_user', JSON.stringify(staffUser));
       return { error: null };
     }
+
+    // Check if the user is a registered Kiosk-Only employee who does not have system access
+    try {
+      const storedEmps = localStorage.getItem('espro_employees');
+      const emps = storedEmps ? JSON.parse(storedEmps) : [];
+      const kioskEmp = emps.find((e: any) =>
+        (e.email && (e.email.toLowerCase() === lookupEmail || e.email.toLowerCase() === rawInput)) ||
+        e.employee_code?.toLowerCase() === rawInput ||
+        e.name?.toLowerCase() === rawInput
+      );
+
+      if (kioskEmp && !kioskEmp.has_system_access) {
+        return {
+          error: `Staff member "${kioskEmp.name}" is registered for Counter Kiosk PIN attendance only. Please request a store manager to enable ESPRO System Login Access in Employee Management.`
+        };
+      }
+    } catch (_) {}
 
     return { error: 'Invalid email or password.' };
   }

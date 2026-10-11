@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Download, BarChart3, DollarSign, Package, Receipt,
-  X, RotateCcw, Inbox, UtensilsCrossed
+  X, RotateCcw, Inbox, UtensilsCrossed, ShoppingBag
 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import Sidebar from '../components/Layout/Sidebar';
@@ -68,6 +68,110 @@ export default function ReportsPage() {
   const [voidType, setVoidType] = useState<'voided' | 'refunded'>('voided');
   const [voidReason, setVoidReason] = useState('');
   const [savingVoid, setSavingVoid] = useState(false);
+
+  // Inspected Sale Items Popover (Desktop Hover + Touchscreen Tap/Hold)
+  const [inspectedSale, setInspectedSale] = useState<{
+    sale: Sale;
+    pos?: { top: number; left: number };
+    triggerType: 'hover' | 'click' | 'hold';
+  } | null>(null);
+
+  const hidePopoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function calculatePopoverPosition(el: HTMLElement) {
+    const rect = el.getBoundingClientRect();
+    const width = 330;
+    let left = rect.left + rect.width / 2 - width / 2;
+    left = Math.max(16, Math.min(left, window.innerWidth - width - 16));
+
+    let top = rect.bottom + 8;
+    // If popover would clip bottom of screen, show above
+    if (top + 320 > window.innerHeight && rect.top > 320) {
+      top = rect.top - 320 - 8;
+    }
+
+    return { top, left };
+  }
+
+  function handleItemsMouseEnter(s: Sale, e: React.MouseEvent<HTMLElement>) {
+    if (hidePopoverTimer.current) {
+      clearTimeout(hidePopoverTimer.current);
+      hidePopoverTimer.current = null;
+    }
+    const pos = calculatePopoverPosition(e.currentTarget);
+    setInspectedSale({
+      sale: s,
+      pos,
+      triggerType: 'hover',
+    });
+  }
+
+  function handleItemsMouseLeave() {
+    hidePopoverTimer.current = setTimeout(() => {
+      setInspectedSale(prev => (prev?.triggerType === 'hover' ? null : prev));
+    }, 250);
+  }
+
+  function handlePopoverMouseEnter() {
+    if (hidePopoverTimer.current) {
+      clearTimeout(hidePopoverTimer.current);
+      hidePopoverTimer.current = null;
+    }
+  }
+
+  function handleItemsClick(s: Sale, e: React.MouseEvent<HTMLElement>) {
+    e.stopPropagation();
+    if (hidePopoverTimer.current) {
+      clearTimeout(hidePopoverTimer.current);
+      hidePopoverTimer.current = null;
+    }
+
+    if (inspectedSale?.sale.id === s.id && inspectedSale.triggerType !== 'hover') {
+      setInspectedSale(null);
+      return;
+    }
+
+    const pos = calculatePopoverPosition(e.currentTarget);
+    setInspectedSale({
+      sale: s,
+      pos,
+      triggerType: 'click',
+    });
+  }
+
+  function handleItemsTouchStart(s: Sale, e: React.TouchEvent<HTMLElement>) {
+    const target = e.currentTarget;
+    if (touchHoldTimer.current) clearTimeout(touchHoldTimer.current);
+    touchHoldTimer.current = setTimeout(() => {
+      const pos = calculatePopoverPosition(target);
+      setInspectedSale({
+        sale: s,
+        pos,
+        triggerType: 'hold',
+      });
+      toast.success(`Showing items for ${s.id}`, { id: 'hold-toast', duration: 1500 });
+    }, 380); // 380ms hold
+  }
+
+  function handleItemsTouchEnd() {
+    if (touchHoldTimer.current) {
+      clearTimeout(touchHoldTimer.current);
+      touchHoldTimer.current = null;
+    }
+  }
+
+  useEffect(() => {
+    function onDocClick() {
+      if (inspectedSale) {
+        setInspectedSale(null);
+      }
+    }
+    document.addEventListener('click', onDocClick);
+    return () => {
+      document.removeEventListener('click', onDocClick);
+    };
+  }, [inspectedSale]);
 
   async function fetchReportsData() {
     setLoadingData(true);
@@ -702,9 +806,24 @@ export default function ReportsPage() {
                               {/* Cashier */}
                               <td>{s.cashierName}</td>
 
-                              {/* No. of Items */}
-                              <td>
-                                {itemCount} item{itemCount === 1 ? '' : 's'}
+                              {/* No. of Items (Hover on desktop, tap or hold on touchscreen) */}
+                              <td className="sale-items-cell">
+                                <button
+                                  type="button"
+                                  className={`items-count-pill-btn ${inspectedSale?.sale.id === s.id ? 'active' : ''}`}
+                                  onClick={(e) => handleItemsClick(s, e)}
+                                  onMouseEnter={(e) => handleItemsMouseEnter(s, e)}
+                                  onMouseLeave={handleItemsMouseLeave}
+                                  onTouchStart={(e) => handleItemsTouchStart(s, e)}
+                                  onTouchEnd={handleItemsTouchEnd}
+                                  onTouchCancel={handleItemsTouchEnd}
+                                  title="Hover, tap, or hold to view purchased items"
+                                >
+                                  <Package size={13} className="pill-pkg-icon" />
+                                  <span className="pill-text">
+                                    {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                                  </span>
+                                </button>
                               </td>
 
                               {/* Subtotal */}
@@ -1325,6 +1444,129 @@ export default function ReportsPage() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Order Items Popover / Inspector */}
+      <AnimatePresence>
+        {inspectedSale && (
+          <div
+            className="sale-items-floating-popover-portal"
+            style={{
+              position: 'fixed',
+              top: Math.max(12, inspectedSale.pos?.top ?? 100),
+              left: Math.max(12, inspectedSale.pos?.left ?? 100),
+              zIndex: 9999,
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseEnter={handlePopoverMouseEnter}
+            onMouseLeave={handleItemsMouseLeave}
+          >
+            <motion.div
+              className="sale-items-popover-card"
+              initial={{ opacity: 0, scale: 0.94, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 6 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+            >
+              {/* Popover Header */}
+              <div className="popover-card-header">
+                <div className="popover-header-left">
+                  <div className="popover-icon-box">
+                    <ShoppingBag size={14} />
+                  </div>
+                  <div>
+                    <div className="popover-title">Items Breakdown</div>
+                    <div className="popover-sale-code">
+                      <span>{inspectedSale.sale.id}</span>
+                      <span className="popover-order-type-tag">
+                        {inspectedSale.sale.orderType === 'takeout' ? 'Takeout' : 'Dine-In'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="popover-close-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setInspectedSale(null);
+                  }}
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {/* Popover Items List */}
+              <div className="popover-items-list">
+                {(!Array.isArray(inspectedSale.sale.items) || inspectedSale.sale.items.length === 0) ? (
+                  <div className="popover-empty-items">No item breakdown recorded for this transaction.</div>
+                ) : (
+                  inspectedSale.sale.items.map((it: any, idx: number) => {
+                    const name = it.name || it.product?.name || 'Menu Item';
+                    const qty = Number(it.qty || 1);
+                    const price = Number(it.price || it.unit_price || it.product?.price || 0);
+                    const sizeName = it.size_name || null;
+                    const addons = Array.isArray(it.addons) ? it.addons : [];
+                    const note = it.note || null;
+                    const lineTotal = price * qty;
+
+                    return (
+                      <div key={idx} className="popover-item-row">
+                        <div className="popover-item-qty">{qty}×</div>
+                        <div className="popover-item-info">
+                          <div className="popover-item-name">{name}</div>
+                          {sizeName && (
+                            <span className="popover-item-size">{sizeName}</span>
+                          )}
+                          {addons.length > 0 && (
+                            <div className="popover-item-addons">
+                              {addons.map((a: any, aIdx: number) => (
+                                <span key={aIdx} className="addon-chip">
+                                  +{a.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {note && (
+                            <div className="popover-item-note">"{note}"</div>
+                          )}
+                        </div>
+                        <div className="popover-item-price">
+                          ₱{lineTotal.toLocaleString('en-PH', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Popover Footer Summary */}
+              <div className="popover-card-footer">
+                <div className="popover-footer-row">
+                  <span>Total Items:</span>
+                  <strong>{getItemCount(inspectedSale.sale.items)}</strong>
+                </div>
+                <div className="popover-footer-row total">
+                  <span>Total Paid:</span>
+                  <strong>
+                    ₱
+                    {Number(inspectedSale.sale.total).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </strong>
+                </div>
+                <div className="popover-touch-hint">
+                  💡 Touchscreen: Tap or hold number of items to toggle
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

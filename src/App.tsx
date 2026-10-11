@@ -13,6 +13,7 @@ import InventoryPage from './pages/Inventory';
 import ExpensesPage from './pages/Expenses';
 import ReportsPage from './pages/Reports';
 import UsersPage from './pages/Users';
+import EmployeesPage from './pages/Employees';
 import SettingsPage from './pages/Settings';
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
           {/* Admin only */}
           <Route path="/menu" element={<ProtectedRoute adminOnly><MenuPage /></ProtectedRoute>} />
           <Route path="/reports" element={<ProtectedRoute adminOnly><ReportsPage /></ProtectedRoute>} />
+          <Route path="/employees" element={<ProtectedRoute adminOnly><EmployeesPage /></ProtectedRoute>} />
           <Route path="/users" element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>} />
 
           {/* Redirect */}

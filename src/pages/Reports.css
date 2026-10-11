@@ -182,3 +182,280 @@
 .double-underline.loss {
   border-bottom: 3px double var(--danger);
 }
+
+/* ────────────────────────────────────────────────────────────
+   Sales Transactions: Interactive Item Count & Hover/Touch Popover
+   ──────────────────────────────────────────────────────────── */
+.sale-items-cell {
+  position: relative;
+}
+
+.items-count-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  transition: all var(--transition);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.items-count-pill-btn:hover,
+.items-count-pill-btn.active {
+  background: rgba(180, 83, 9, 0.1);
+  border-color: rgba(180, 83, 9, 0.4);
+  color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(180, 83, 9, 0.15);
+}
+
+.items-count-pill-btn:active {
+  transform: scale(0.96);
+}
+
+.pill-pkg-icon {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.pill-text {
+  letter-spacing: 0.2px;
+}
+
+/* Floating Popover Container */
+.sale-items-floating-popover-portal {
+  pointer-events: auto;
+}
+
+.sale-items-popover-card {
+  width: 320px;
+  max-width: 90vw;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.18), 0 4px 10px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+}
+
+.popover-card-header {
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.popover-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.popover-icon-box {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: rgba(180, 83, 9, 0.12);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.popover-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.popover-sale-code {
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.popover-order-type-tag {
+  font-size: 0.65rem;
+  font-family: var(--font);
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(180, 83, 9, 0.1);
+  color: var(--primary);
+  text-transform: uppercase;
+}
+
+.popover-close-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.popover-close-btn:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--text-primary);
+}
+
+/* Items List */
+.popover-items-list {
+  padding: 10px 14px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.popover-empty-items {
+  padding: 20px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.popover-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border-light, rgba(0, 0, 0, 0.06));
+}
+
+.popover-item-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.popover-item-qty {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--primary);
+  background: rgba(180, 83, 9, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.popover-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.popover-item-name {
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.popover-item-size {
+  display: inline-block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-top: 3px;
+}
+
+.popover-item-addons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.addon-chip {
+  font-size: 0.68rem;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.popover-item-note {
+  font-size: 0.7rem;
+  font-style: italic;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.popover-item-price {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+
+/* Popover Footer */
+.popover-card-footer {
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.popover-footer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.popover-footer-row.total {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.popover-footer-row.total strong {
+  color: var(--primary);
+  font-size: 0.95rem;
+}
+
+.popover-touch-hint {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.03);
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+

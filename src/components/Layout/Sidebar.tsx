@@ -3,8 +3,8 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, ShoppingCart, UtensilsCrossed, Package, Receipt,
-  BarChart3, Users, Settings, LogOut, PlusCircle, Coffee, X,
-  ChevronLeft, ChevronRight
+  BarChart3, Users, UserCog, Settings, LogOut, PlusCircle, Coffee, X,
+  ChevronLeft, ChevronRight, Clock
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -17,7 +17,8 @@ const navItems = [
   { to: '/inventory', icon: Package, label: 'Inventory Management' },
   { to: '/expenses', icon: Receipt, label: 'Expenses Management' },
   { to: '/reports', icon: BarChart3, label: 'Financial Reports', adminOnly: true },
-  { to: '/users', icon: Users, label: 'User Management', adminOnly: true },
+  { to: '/employees', icon: Users, label: 'Employee Management', adminOnly: true },
+  { to: '/users', icon: UserCog, label: 'User Management', adminOnly: true },
 ];
 
 const STORAGE_KEY = 'espro_sidebar_collapsed';
@@ -256,8 +257,8 @@ export default function Sidebar() {
           </div>
         </nav>
 
-        {/* New Sale CTA */}
-        <div className="sidebar-cta">
+        {/* New Sale & Time Clock CTA */}
+        <div className="sidebar-cta" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <motion.button
             className="btn btn-primary"
             style={{ width: '100%', justifyContent: 'center' }}
@@ -268,6 +269,24 @@ export default function Sidebar() {
           >
             <PlusCircle size={16} />
             <span>New Sale</span>
+          </motion.button>
+
+          <motion.button
+            className="btn btn-ghost"
+            style={{
+              width: '100%',
+              justifyContent: 'center',
+              background: 'rgba(255, 255, 255, 0.06)',
+              color: 'rgba(255, 255, 255, 0.9)',
+              borderColor: 'rgba(255, 255, 255, 0.12)',
+            }}
+            onClick={() => window.dispatchEvent(new CustomEvent('open-time-clock'))}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            title="Time Clock Kiosk"
+          >
+            <Clock size={16} style={{ color: 'var(--primary-light)' }} />
+            <span>Time Clock</span>
           </motion.button>
         </div>
 

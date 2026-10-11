@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Minus, Plus, Trash2, Tag, CheckCircle, X, RotateCcw,
-  ShoppingCart, Coffee, Utensils, ShoppingBag, SlidersHorizontal
+  ShoppingCart, Coffee, Utensils, ShoppingBag, SlidersHorizontal,
+  Lock, AlertCircle, Clock
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Layout/Sidebar';
@@ -10,6 +11,8 @@ import TopBar from '../components/Layout/TopBar';
 import SizePickerModal from '../components/POS/SizePickerModal';
 import AddonsModal from '../components/POS/AddonsModal';
 import ConfirmOrderModal from '../components/POS/ConfirmOrderModal';
+import TimeClockModal from '../components/Attendance/TimeClockModal';
+import { checkPosClockInStatus, type PosClockInStatus } from '../lib/employeeDb';
 import type {
   MenuItem,
   MenuItemSize,
@@ -78,8 +81,35 @@ export default function POSPage() {
   const [voidModal, setVoidModal] = useState(false);
   const [voidReason, setVoidReason] = useState('');
 
+  // Clock-in attendance lock states
+  const [clockStatus, setClockStatus] = useState<PosClockInStatus | null>(null);
+  const [timeClockModalOpen, setTimeClockModalOpen] = useState(false);
+
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  const refreshClockStatus = useCallback(async () => {
+    try {
+      const status = await checkPosClockInStatus(user);
+      setClockStatus(status);
+    } catch (err) {
+      console.warn('Failed to check POS clock-in status:', err);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    refreshClockStatus();
+    const handleUpdated = () => refreshClockStatus();
+    const handleFocus = () => refreshClockStatus();
+    window.addEventListener('espro-attendance-updated', handleUpdated);
+    window.addEventListener('focus', handleFocus);
+    const interval = setInterval(refreshClockStatus, 15000);
+    return () => {
+      window.removeEventListener('espro-attendance-updated', handleUpdated);
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
+  }, [refreshClockStatus]);
 
   // Ingredients dictionary map for fast lookups
   const ingredientsMap = useMemo(() => {
@@ -559,6 +589,12 @@ export default function POSPage() {
       toast.error('Cart is empty');
       return;
     }
+    // Block sale processing if no employee is clocked in or employee is on break
+    if (clockStatus && !clockStatus.allowed) {
+      toast.error(clockStatus.message || 'Cannot process sale: An employee must be clocked in.');
+      setTimeClockModalOpen(true);
+      return;
+    }
     if (!checkCartShortages(cart, orderType)) {
       return;
     }
@@ -573,8 +609,19 @@ export default function POSPage() {
   }) {
     setCompleting(true);
 
+    // Revalidate live clock-in status before charging
+    const recheck = await checkPosClockInStatus(user);
+    if (!recheck.allowed) {
+      setClockStatus(recheck);
+      toast.error(recheck.message || 'Cannot process sale: An employee must be clocked in.');
+      setConfirmModal(false);
+      setTimeClockModalOpen(true);
+      setCompleting(false);
+      return;
+    }
+
     const saleId = `S-${Date.now()}`;
-    const cashierName = user?.name || 'Staff User';
+    const cashierName = recheck.activeCashierName || user?.name || 'Staff User';
 
     try {
       // Run computeOrder for complete order deduction requirements
@@ -757,9 +804,34 @@ export default function POSPage() {
 
           {/* Cart Panel */}
           <div className="pos-cart">
-            {/* Header with Order Type Switcher */}
+            {/* Header with Order Type Switcher & Live Cashier Status */}
             <div className="cart-header">
-              <h3>Current Cart</h3>
+              <div className="cart-header-title-wrap">
+                <h3>Current Cart</h3>
+                {clockStatus?.allowed ? (
+                  <button
+                    type="button"
+                    className="pos-cashier-active-badge"
+                    onClick={() => setTimeClockModalOpen(true)}
+                    title="Click to view Time Clock / Shift Attendance"
+                  >
+                    <span className="cashier-pulse-dot" />
+                    <span className="cashier-label">Cashier:</span>
+                    <span className="cashier-name">{clockStatus.activeCashierName}</span>
+                    <Clock size={12} className="cashier-clock-icon" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="pos-cashier-locked-badge"
+                    onClick={() => setTimeClockModalOpen(true)}
+                    title="Click to Clock In"
+                  >
+                    <Lock size={12} />
+                    <span>Clock-In Required</span>
+                  </button>
+                )}
+              </div>
               {cart.length > 0 && (
                 <button
                   className="btn btn-ghost btn-sm"
@@ -770,6 +842,26 @@ export default function POSPage() {
                 </button>
               )}
             </div>
+
+            {/* High-visibility alert banner when cashier is not clocked in */}
+            {clockStatus && !clockStatus.allowed && (
+              <div className="pos-clockin-alert-banner">
+                <div className="pos-clockin-alert-left">
+                  <AlertCircle size={18} className="pos-clockin-alert-icon" />
+                  <div>
+                    <div className="pos-clockin-alert-title">Clock-In Required to Sell</div>
+                    <div className="pos-clockin-alert-desc">{clockStatus.message}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-warning pos-clockin-cta-btn"
+                  onClick={() => setTimeClockModalOpen(true)}
+                >
+                  <Clock size={13} /> Clock In Now
+                </button>
+              </div>
+            )}
 
             {/* Order Type Toggle (Dine-in vs Takeout) */}
             <div className="pos-order-type-bar">
@@ -948,7 +1040,7 @@ export default function POSPage() {
             </div>
 
             <motion.button
-              className="btn btn-primary btn-lg complete-btn"
+              className={`btn btn-primary btn-lg complete-btn ${clockStatus && !clockStatus.allowed ? 'blocked' : ''}`}
               onClick={handleOpenCheckout}
               disabled={completing || cart.length === 0}
               whileHover={{ scale: 1.01 }}
@@ -956,6 +1048,10 @@ export default function POSPage() {
             >
               {completing ? (
                 <span className="spinner-sm" />
+              ) : clockStatus && !clockStatus.allowed ? (
+                <>
+                  <Lock size={18} /> Clock-In Required
+                </>
               ) : (
                 <>
                   <CheckCircle size={18} /> Complete Sale
@@ -1064,6 +1160,18 @@ export default function POSPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* In-POS Time Clock Kiosk Modal */}
+      <TimeClockModal
+        isOpen={timeClockModalOpen}
+        onClose={() => {
+          setTimeClockModalOpen(false);
+          refreshClockStatus();
+        }}
+        onSuccess={() => {
+          refreshClockStatus();
+        }}
+      />
     </div>
   );
 }

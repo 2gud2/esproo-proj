@@ -147,6 +147,7 @@ export default function UsersPage() {
         email: fullEmail,
         role: form.role,
         status: 'active',
+        password: form.password,
         createdAt: new Date()
       };
 
@@ -172,7 +173,7 @@ export default function UsersPage() {
       }
 
       setUsers(prev => prev.map(u => u.id === editing.id
-        ? { ...u, name: form.name.trim(), role: form.role }
+        ? { ...u, name: form.name.trim(), role: form.role, ...(form.password ? { password: form.password } : {}) }
         : u
       ));
       toast.success('User updated successfully!');

@@ -9,6 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { loadIngredients } from '../../lib/db';
 import { isLowStock, isOutOfStock, getExpirationInfo } from '../../lib/stockStatus';
 import type { Ingredient } from '../../lib/mockData';
+import TimeClockModal from '../Attendance/TimeClockModal';
 import './TopBar.css';
 
 interface TopBarProps {
@@ -35,9 +36,17 @@ export default function TopBar({ title, searchPlaceholder, onSearch, action }: T
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showTimeClock, setShowTimeClock] = useState(false);
 
   const notifRef = useRef<HTMLDivElement>(null);
   const helpRef = useRef<HTMLDivElement>(null);
+
+  // Listen for global open-time-clock event from anywhere
+  useEffect(() => {
+    const handleOpenTimeClock = () => setShowTimeClock(true);
+    window.addEventListener('open-time-clock', handleOpenTimeClock);
+    return () => window.removeEventListener('open-time-clock', handleOpenTimeClock);
+  }, []);
 
   // Fetch ingredients on mount for notification dot and alerts
   useEffect(() => {
@@ -174,6 +183,17 @@ export default function TopBar({ title, searchPlaceholder, onSearch, action }: T
 
       <div className="topbar-right">
         {action}
+
+        {/* Shared Counter Time Clock Kiosk Button */}
+        <button
+          className="topbar-timeclock-btn"
+          onClick={() => setShowTimeClock(true)}
+          title="Open Counter Time-Clock Kiosk"
+          id="topbar-timeclock-btn"
+        >
+          <Clock size={16} />
+          <span>Time Clock</span>
+        </button>
 
         {/* Notifications Bell Dropdown */}
         <div className="topbar-dropdown-anchor" ref={notifRef}>
@@ -313,6 +333,12 @@ export default function TopBar({ title, searchPlaceholder, onSearch, action }: T
           {user?.name?.charAt(0).toUpperCase() ?? <User size={16} />}
         </div>
       </div>
+
+      {/* Shared Counter Kiosk Attendance Modal */}
+      <TimeClockModal
+        isOpen={showTimeClock}
+        onClose={() => setShowTimeClock(false)}
+      />
     </header>
   );
 }

@@ -23,11 +23,41 @@ export async function createStaffAccount(email: string, password: string, name: 
       user_metadata: { name, role }
     });
 
-    if (error) return { user: null, error: error.message };
+    if (error) {
+      // If user already exists in auth.users, link and update them
+      if (error.message.toLowerCase().includes('already') || error.message.toLowerCase().includes('registered')) {
+        try {
+          const listRes = await adminClient.auth.admin.listUsers();
+          const existingUser = listRes.data?.users.find((u: User) => u.email?.toLowerCase() === email.toLowerCase());
+          if (existingUser) {
+            const updatePayload: any = {
+              user_metadata: { name, role },
+              email_confirm: true,
+            };
+            if (password) updatePayload.password = password;
+            const updated = await adminClient.auth.admin.updateUserById(existingUser.id, updatePayload);
+            const resolvedUser = updated.data?.user || existingUser;
+
+            try {
+              await adminClient.from('profiles').upsert({
+                id: resolvedUser.id,
+                name,
+                role,
+                status: 'active',
+                email
+              });
+            } catch (_) {}
+
+            return { user: resolvedUser, error: null };
+          }
+        } catch (_) {}
+      }
+      return { user: null, error: error.message };
+    }
 
     if (data.user) {
       try {
-        await supabase.from('profiles').upsert({
+        await adminClient.from('profiles').upsert({
           id: data.user.id,
           name,
           role,

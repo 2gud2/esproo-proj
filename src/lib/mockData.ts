@@ -177,6 +177,7 @@ export interface StaffUser {
   email: string;
   role: 'admin' | 'employee';
   status: 'active' | 'disabled';
+  password?: string;
   createdAt: Date;
 }
 
