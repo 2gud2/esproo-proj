@@ -270,24 +270,6 @@ export default function Sidebar() {
             <PlusCircle size={16} />
             <span>New Sale</span>
           </motion.button>
-
-          <motion.button
-            className="btn btn-ghost"
-            style={{
-              width: '100%',
-              justifyContent: 'center',
-              background: 'rgba(255, 255, 255, 0.06)',
-              color: 'rgba(255, 255, 255, 0.9)',
-              borderColor: 'rgba(255, 255, 255, 0.12)',
-            }}
-            onClick={() => window.dispatchEvent(new CustomEvent('open-time-clock'))}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            title="Time Clock Kiosk"
-          >
-            <Clock size={16} style={{ color: 'var(--primary-light)' }} />
-            <span>Time Clock</span>
-          </motion.button>
         </div>
 
         {/* Bottom */}

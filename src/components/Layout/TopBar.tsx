@@ -186,13 +186,13 @@ export default function TopBar({ title, searchPlaceholder, onSearch, action }: T
 
         {/* Shared Counter Time Clock Kiosk Button */}
         <button
-          className="topbar-timeclock-btn"
+          className="btn btn-primary topbar-timeclock-btn"
           onClick={() => setShowTimeClock(true)}
           title="Open Counter Time-Clock Kiosk"
           id="topbar-timeclock-btn"
         >
           <Clock size={16} />
-          <span>Time Clock</span>
+          <span>Time Clock Kiosk</span>
         </button>
 
         {/* Notifications Bell Dropdown */}
@@ -338,6 +338,9 @@ export default function TopBar({ title, searchPlaceholder, onSearch, action }: T
       <TimeClockModal
         isOpen={showTimeClock}
         onClose={() => setShowTimeClock(false)}
+        onSuccess={() => {
+          window.dispatchEvent(new CustomEvent('timeclock-updated'));
+        }}
       />
     </header>
   );

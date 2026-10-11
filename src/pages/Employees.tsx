@@ -11,7 +11,6 @@ import { format, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks, isSameDay 
 import toast from 'react-hot-toast';
 import Sidebar from '../components/Layout/Sidebar';
 import TopBar from '../components/Layout/TopBar';
-import TimeClockModal from '../components/Attendance/TimeClockModal';
 import {
   fetchEmployees,
   createEmployee,
@@ -50,7 +49,6 @@ const ROLE_OPTIONS: EmployeeRole[] = [
 
 export default function EmployeesPage() {
   const [activeTab, setActiveTab] = useState<MainTab>('directory');
-  const [kioskOpen, setKioskOpen] = useState(false);
 
   // Data states
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -62,8 +60,6 @@ export default function EmployeesPage() {
   // Tab 1 (Directory) states
   const [dirSearch, setDirSearch] = useState('');
   const [dirRoleFilter, setDirRoleFilter] = useState<string>('all');
-  const [dirStatusFilter, setDirStatusFilter] = useState<string>('all');
-  const [dirAccessFilter, setDirAccessFilter] = useState<'all' | 'system' | 'kiosk'>('all');
   const [showAddEmpModal, setShowAddEmpModal] = useState(false);
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
   const [pinChangeEmp, setPinChangeEmp] = useState<Employee | null>(null);
@@ -155,6 +151,15 @@ export default function EmployeesPage() {
   // Load initial data
   useEffect(() => {
     loadAllData();
+  }, [loadAllData]);
+
+  // Refresh attendance data whenever someone clocks in/out via TopBar
+  useEffect(() => {
+    const handleTimeClockUpdated = () => {
+      loadAllData();
+    };
+    window.addEventListener('timeclock-updated', handleTimeClockUpdated);
+    return () => window.removeEventListener('timeclock-updated', handleTimeClockUpdated);
   }, [loadAllData]);
 
   // Reload schedules when week navigation changes
@@ -256,15 +261,10 @@ export default function EmployeesPage() {
         emp.role.toLowerCase().includes(dirSearch.toLowerCase());
 
       const matchRole = dirRoleFilter === 'all' || emp.role === dirRoleFilter;
-      const matchStatus = dirStatusFilter === 'all' || emp.status === dirStatusFilter;
-      const matchAccess =
-        dirAccessFilter === 'all' ||
-        (dirAccessFilter === 'system' && emp.has_system_access) ||
-        (dirAccessFilter === 'kiosk' && !emp.has_system_access);
 
-      return matchSearch && matchRole && matchStatus && matchAccess;
+      return matchSearch && matchRole;
     });
-  }, [employees, dirSearch, dirRoleFilter, dirStatusFilter, dirAccessFilter]);
+  }, [employees, dirSearch, dirRoleFilter]);
 
   // Filtered attendance for Timesheets tab
   const filteredAttendance = useMemo(() => {
@@ -692,35 +692,16 @@ export default function EmployeesPage() {
       <main className="main-content">
         <TopBar
           title="Employee Management & Attendance"
-          action={
-            <button
-              className="btn btn-primary"
-              onClick={() => setKioskOpen(true)}
-              title="Launch Counter Time-Clock Kiosk"
-            >
-              <Clock size={16} />
-              <span>Time Clock Kiosk</span>
-            </button>
-          }
         />
 
         <div className="page-body employees-page-body">
-          {/* Header Description & Launch Kiosk Banner */}
+          {/* Header Description */}
           <div className="emp-page-header">
             <div>
               <h1 className="emp-page-title">Espro Staff Operations</h1>
               <p className="emp-page-subtitle">
                 Manage your café staff, view real-time attendance, and schedule weekly barista rosters.
               </p>
-            </div>
-            <div className="emp-header-actions">
-              <button
-                className="btn btn-primary btn-kiosk-launch"
-                onClick={() => setKioskOpen(true)}
-              >
-                <Clock size={18} />
-                <span>Open Time Clock Kiosk</span>
-              </button>
             </div>
           </div>
 
@@ -840,27 +821,6 @@ export default function EmployeesPage() {
                     {ROLE_OPTIONS.map(r => (
                       <option key={r} value={r}>{r}</option>
                     ))}
-                  </select>
-
-                  <select
-                    className="input emp-select-filter"
-                    value={dirStatusFilter}
-                    onChange={e => setDirStatusFilter(e.target.value)}
-                  >
-                    <option value="all">All Statuses</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="on_leave">On Leave</option>
-                  </select>
-
-                  <select
-                    className="input emp-select-filter"
-                    value={dirAccessFilter}
-                    onChange={e => setDirAccessFilter(e.target.value as any)}
-                  >
-                    <option value="all">All Access Types</option>
-                    <option value="system">ESPRO Users (POS / Web)</option>
-                    <option value="kiosk">Kiosk Only (Floor Crew)</option>
                   </select>
 
                   <button className="btn btn-primary" onClick={openAddModal}>
@@ -1135,7 +1095,7 @@ export default function EmployeesPage() {
                   <p>No punches recorded for the selected time period. Staff can clock in using the Time Clock Kiosk.</p>
                   <button
                     className="btn btn-primary"
-                    onClick={() => setKioskOpen(true)}
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-time-clock'))}
                     style={{ marginTop: 14 }}
                   >
                     <Clock size={16} />
@@ -2136,21 +2096,6 @@ export default function EmployeesPage() {
               </div>
             )}
           </AnimatePresence>
-
-          {/* ════════════════════════════════════════════════════════════ */}
-          {/* TIME CLOCK KIOSK MODAL (Can also be triggered anytime)        */}
-          {/* ════════════════════════════════════════════════════════════ */}
-          <TimeClockModal
-            isOpen={kioskOpen}
-            onClose={() => {
-              setKioskOpen(false);
-              // Refresh attendance data on kiosk close
-              loadAllData();
-            }}
-            onSuccess={() => {
-              loadAllData();
-            }}
-          />
         </div>
       </main>
     </div>
