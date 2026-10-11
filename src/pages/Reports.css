@@ -459,3 +459,181 @@
   border-radius: 4px;
 }
 
+/* ────────────────────────────────────────────────────────────
+   Export Dropdown Menu Styles
+   ──────────────────────────────────────────────────────────── */
+.export-dropdown-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.btn-export-dropdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--primary);
+  color: #fff;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+  font-family: var(--font);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  box-shadow: 0 2px 5px rgba(148, 58, 31, 0.25);
+}
+
+.btn-export-dropdown:hover:not(:disabled) {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 10px rgba(148, 58, 31, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-export-dropdown:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.export-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  min-width: 260px;
+  padding: 6px;
+  z-index: 1000;
+  animation: dropdownFadeIn 0.15s ease-out;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.export-dropdown-header {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  padding: 6px 10px 4px;
+}
+
+.export-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 0.84rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+
+.export-dropdown-item:hover {
+  background: var(--surface-2);
+  color: var(--primary);
+}
+
+.export-dropdown-item.primary-action {
+  font-weight: 600;
+}
+
+.export-dropdown-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.export-dropdown-icon.pdf {
+  color: #c62828;
+  background: rgba(198, 40, 40, 0.08);
+}
+
+.export-dropdown-icon.csv {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.08);
+}
+
+.export-dropdown-icon.full {
+  color: var(--primary);
+  background: rgba(148, 58, 31, 0.08);
+}
+
+.export-dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 5px 0;
+}
+
+/* ────────────────────────────────────────────────────────────
+   Profit Summary Break-Even & P&L Percent Column
+   ──────────────────────────────────────────────────────────── */
+.income-statement-pct {
+  text-align: right;
+  font-family: 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 90px;
+}
+
+.income-statement-break-even {
+  margin: 16px 20px 20px;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.break-even-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.break-even-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.break-even-amount {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--primary);
+  font-family: 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+}
+
+
