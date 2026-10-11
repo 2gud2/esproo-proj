@@ -86,6 +86,7 @@ export default function POSPage() {
   const [timeClockModalOpen, setTimeClockModalOpen] = useState(false);
 
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const navigate = useNavigate();
 
   const refreshClockStatus = useCallback(async () => {
@@ -589,8 +590,8 @@ export default function POSPage() {
       toast.error('Cart is empty');
       return;
     }
-    // Block sale processing if no employee is clocked in or employee is on break
-    if (clockStatus && !clockStatus.allowed) {
+    // Block sale processing if no employee is clocked in or employee is on break (Admins bypass clock-in)
+    if (!isAdmin && clockStatus && !clockStatus.allowed) {
       toast.error(clockStatus.message || 'Cannot process sale: An employee must be clocked in.');
       setTimeClockModalOpen(true);
       return;
@@ -609,19 +610,21 @@ export default function POSPage() {
   }) {
     setCompleting(true);
 
-    // Revalidate live clock-in status before charging
-    const recheck = await checkPosClockInStatus(user);
-    if (!recheck.allowed) {
-      setClockStatus(recheck);
-      toast.error(recheck.message || 'Cannot process sale: An employee must be clocked in.');
-      setConfirmModal(false);
-      setTimeClockModalOpen(true);
-      setCompleting(false);
-      return;
+    // Revalidate live clock-in status before charging (Admins bypass clock-in)
+    if (!isAdmin) {
+      const recheck = await checkPosClockInStatus(user);
+      if (!recheck.allowed) {
+        setClockStatus(recheck);
+        toast.error(recheck.message || 'Cannot process sale: An employee must be clocked in.');
+        setConfirmModal(false);
+        setTimeClockModalOpen(true);
+        setCompleting(false);
+        return;
+      }
     }
 
     const saleId = `S-${Date.now()}`;
-    const cashierName = recheck.activeCashierName || user?.name || 'Staff User';
+    const cashierName = clockStatus?.activeCashierName || user?.name || (isAdmin ? 'Admin' : 'Staff User');
 
     try {
       // Run computeOrder for complete order deduction requirements
@@ -808,28 +811,30 @@ export default function POSPage() {
             <div className="cart-header">
               <div className="cart-header-title-wrap">
                 <h3>Current Cart</h3>
-                {clockStatus?.allowed ? (
-                  <button
-                    type="button"
-                    className="pos-cashier-active-badge"
-                    onClick={() => setTimeClockModalOpen(true)}
-                    title="Click to view Time Clock / Shift Attendance"
-                  >
-                    <span className="cashier-pulse-dot" />
-                    <span className="cashier-label">Cashier:</span>
-                    <span className="cashier-name">{clockStatus.activeCashierName}</span>
-                    <Clock size={12} className="cashier-clock-icon" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="pos-cashier-locked-badge"
-                    onClick={() => setTimeClockModalOpen(true)}
-                    title="Click to Clock In"
-                  >
-                    <Lock size={12} />
-                    <span>Clock-In Required</span>
-                  </button>
+                {!isAdmin && (
+                  clockStatus?.allowed ? (
+                    <button
+                      type="button"
+                      className="pos-cashier-active-badge"
+                      onClick={() => setTimeClockModalOpen(true)}
+                      title="Click to view Time Clock / Shift Attendance"
+                    >
+                      <span className="cashier-pulse-dot" />
+                      <span className="cashier-label">Cashier:</span>
+                      <span className="cashier-name">{clockStatus.activeCashierName}</span>
+                      <Clock size={12} className="cashier-clock-icon" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="pos-cashier-locked-badge"
+                      onClick={() => setTimeClockModalOpen(true)}
+                      title="Click to Clock In"
+                    >
+                      <Lock size={12} />
+                      <span>Clock-In Required</span>
+                    </button>
+                  )
                 )}
               </div>
               {cart.length > 0 && (
@@ -843,8 +848,8 @@ export default function POSPage() {
               )}
             </div>
 
-            {/* High-visibility alert banner when cashier is not clocked in */}
-            {clockStatus && !clockStatus.allowed && (
+            {/* High-visibility alert banner when cashier is not clocked in (only shown for non-admin users) */}
+            {!isAdmin && clockStatus && !clockStatus.allowed && (
               <div className="pos-clockin-alert-banner">
                 <div className="pos-clockin-alert-left">
                   <AlertCircle size={18} className="pos-clockin-alert-icon" />
@@ -1040,7 +1045,7 @@ export default function POSPage() {
             </div>
 
             <motion.button
-              className={`btn btn-primary btn-lg complete-btn ${clockStatus && !clockStatus.allowed ? 'blocked' : ''}`}
+              className={`btn btn-primary btn-lg complete-btn ${!isAdmin && clockStatus && !clockStatus.allowed ? 'blocked' : ''}`}
               onClick={handleOpenCheckout}
               disabled={completing || cart.length === 0}
               whileHover={{ scale: 1.01 }}
@@ -1048,7 +1053,7 @@ export default function POSPage() {
             >
               {completing ? (
                 <span className="spinner-sm" />
-              ) : clockStatus && !clockStatus.allowed ? (
+              ) : !isAdmin && clockStatus && !clockStatus.allowed ? (
                 <>
                   <Lock size={18} /> Clock-In Required
                 </>

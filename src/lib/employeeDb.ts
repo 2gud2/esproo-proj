@@ -1142,6 +1142,7 @@ export interface PosClockInStatus {
   reason?: 'not_clocked_in' | 'on_break' | 'no_staff_on_duty';
   message: string;
   allOnDutyCount: number;
+  isAdminBypass?: boolean;
 }
 
 /**
@@ -1168,8 +1169,9 @@ export async function getCurrentlyOnDutyStaff(): Promise<{
 
 /**
  * Validates whether sale processing in POS should be permitted based on live clock-in attendance.
- * - If current user maps to an employee record, that specific employee must be on duty.
- * - If current user is an admin or unlinked manager account, at least one staff member must be on duty.
+ * - Admin users bypass clock-in completely and can always ring up sales.
+ * - Employee users (baristas, cashiers, etc.) must be clocked in and on duty.
+ * - Unlinked counter terminals require at least one staff member to be clocked in.
  */
 export async function checkPosClockInStatus(
   currentUser?: { id?: string; email?: string; name?: string; role?: string } | null
@@ -1188,7 +1190,20 @@ export async function checkPosClockInStatus(
     r => r.clock_in && !r.clock_out && Boolean(r.break_start && !r.break_end)
   );
 
-  // If current logged-in user is an employee, verify their individual shift punch
+  // 1. ADMIN BYPASS: Administrators are NEVER required to time in / clock in.
+  // They can always process sales without needing to clock in themselves or wait for staff.
+  if (currentUser?.role === 'admin') {
+    const adminName = currentUser.name || 'Admin';
+    return {
+      allowed: true,
+      activeCashierName: adminName,
+      message: `${adminName} (Administrator - Clock-In Bypass)`,
+      allOnDutyCount: onDutyRecords.length,
+      isAdminBypass: true,
+    };
+  }
+
+  // 2. If current logged-in user is an employee, verify their individual shift punch
   if (currentUser) {
     const userEmail = currentUser.email?.toLowerCase().trim();
     const userId = currentUser.id;
