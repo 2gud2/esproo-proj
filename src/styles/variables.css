@@ -1,35 +1,49 @@
 /* ─── Espro Design System Variables ─── */
 :root {
-  /* Colors */
-  --primary: #943A1F;
-  --primary-dark: #7A2F18;
-  --primary-light: #B84C2A;
-  --primary-muted: rgba(148, 58, 31, 0.12);
-  --secondary: #18191A;
-  --secondary-light: #2A2B2D;
-  --secondary-muted: #3D3E40;
+  /* Coffee Theme Core Palette */
+  --cream:        #F3E9D7;  /* Creamy Latte -> highlights, cream text */
+  --caramel:      #C08F5E;  /* Saturated Caramel -> accent, highlights, chart */
+  --mocha:        #7A4A2B;  /* Deep Mocha -> primary buttons, active states, links */
+  --tan:          #D6C0A0;  /* Light cappuccino -> borders, chips, subtle fills */
+  --espresso:     #2B1D16;  /* Deep Espresso -> headings, dark text */
 
-  --bg: #F4F4F2;
-  --surface: #FFFFFF;
-  --surface-2: #F9F9F8;
-  --border: #E8E8E6;
-  --border-light: #F0F0EE;
+  /* Derived Brand Tokens */
+  --primary: var(--mocha);
+  --primary-dark: #5A3320;
+  --primary-light: var(--caramel);
+  --primary-muted: rgba(122, 74, 43, 0.14);
+  --primary-shadow: rgba(122, 74, 43, 0.28);
 
-  --text-primary: #18191A;
-  --text-secondary: #6B6B6B;
-  --text-muted: #9E9E9E;
+  /* Backgrounds & Surfaces */
+  --bg: #EADBC4;            /* Rich warm cream page background */
+  --surface: #FBF5EA;       /* Warm light card surface */
+  --surface-2: #F3E7D3;     /* Warm secondary surface */
+  --surface-3: #E8D9C2;     /* Deeper warm surface */
+  --border: #D6C0A0;        /* Defined warm border */
+  --border-light: #E4D3B8;  /* Soft warm separator */
+
+  /* Typography Colors */
+  --text-primary: #2B1D16;   /* Deep espresso dark text */
+  --text-secondary: #62493A; /* Rich medium brown */
+  --text-muted: #8F7766;     /* Warm muted brown */
   --text-inverse: #FFFFFF;
 
-  --success: #2E7D32;
-  --success-bg: #E8F5E9;
-  --warning: #E65100;
-  --warning-bg: #FFF3E0;
-  --danger: #C62828;
-  --danger-bg: #FFEBEE;
-  --info: #1565C0;
-  --info-bg: #E3F2FD;
+  /* Sidebar Tokens */
+  --secondary: #241712;       /* Deep espresso sidebar background */
+  --secondary-light: #33231B; /* Hover / surface tint inside sidebar */
+  --secondary-muted: #3D2B22;
 
-  /* Sidebar */
+  /* Semantic Colors (Warm-tuned to sit harmoniously on cream) */
+  --success: #2D6A4F;
+  --success-bg: #EAF4EE;
+  --warning: #C2671A;
+  --warning-bg: #FDF2E7;
+  --danger: #B83A2E;
+  --danger-bg: #FCEBE9;
+  --info: #2E6585;
+  --info-bg: #EBF3F8;
+
+  /* Sidebar Dimensions */
   --sidebar-width-expanded: 240px;
   --sidebar-width-collapsed: 72px;
   --sidebar-width: var(--sidebar-width-expanded);
@@ -51,21 +65,21 @@ html[data-sidebar-collapsed="true"] {
 }
 
 :root {
-
   /* Typography */
   --font: 'Hanken Grotesk', 'Inter', system-ui, sans-serif;
 
-  /* Shadows */
-  --shadow-xs: 0 1px 3px rgba(0,0,0,0.06);
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.10);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.14);
-  --shadow-xl: 0 16px 48px rgba(0,0,0,0.18);
+  /* Soft Warm Shadows */
+  --shadow-xs: 0 1px 3px rgba(59, 36, 22, 0.05);
+  --shadow-sm: 0 2px 8px rgba(59, 36, 22, 0.07);
+  --shadow-md: 0 6px 22px rgba(59, 36, 22, 0.10);
+  --shadow-lg: 0 10px 32px rgba(59, 36, 22, 0.12);
+  --shadow-xl: 0 18px 50px rgba(59, 36, 22, 0.16);
 
-  /* Border radius */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  /* Border radius (Soft, modern, 16-20px cards) */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
   --radius-xl: 20px;
   --radius-full: 9999px;
 

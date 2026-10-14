@@ -23,9 +23,10 @@
 }
 
 .emp-page-subtitle {
-  font-size: 0.875rem;
+  font-size: 0.88rem;
   color: var(--text-secondary);
-  margin-top: 4px;
+  margin: 0;
+  line-height: 1.5;
 }
 
 .emp-header-actions {
@@ -35,7 +36,7 @@
 }
 
 .btn-kiosk-launch {
-  box-shadow: 0 4px 14px rgba(148, 58, 31, 0.3);
+  box-shadow: 0 4px 14px var(--primary-shadow);
 }
 
 /* ════════════════════════════════════════════════════════════ */
@@ -75,7 +76,7 @@
 }
 
 .metric-icon-box.total-staff {
-  background: rgba(148, 58, 31, 0.12);
+  background: var(--primary-muted);
   color: var(--primary);
 }
 
@@ -126,8 +127,7 @@
   align-items: center;
   gap: 8px;
   border-bottom: 2px solid var(--border);
-  padding-bottom: 2px;
-  overflow-x: auto;
+  position: relative;
 }
 
 .emp-tab-btn {
@@ -137,13 +137,14 @@
   padding: 10px 18px;
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -4px;
+  margin-bottom: -2px;
+  position: relative;
+  z-index: 1;
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease;
   white-space: nowrap;
 }
 
@@ -155,8 +156,19 @@
 
 .emp-tab-btn.active {
   color: var(--primary);
-  border-bottom-color: var(--primary);
   font-weight: 700;
+}
+
+.emp-tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background: var(--primary);
+  border-radius: 3px 3px 0 0;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .emp-tab-count {
@@ -345,9 +357,9 @@
   font-weight: 600;
   padding: 3px 8px;
   border-radius: 6px;
-  background: rgba(148, 58, 31, 0.08);
+  background: var(--primary-muted);
   color: var(--primary);
-  border: 1px solid rgba(148, 58, 31, 0.2);
+  border: 1px solid rgba(122, 85, 58, 0.2);
 }
 
 .type-tag {
@@ -662,11 +674,13 @@
 }
 
 .shift-pill {
-  border: 1px solid;
-  padding: 2px 7px;
+  border: none;
+  padding: 3px 8px;
   border-radius: 6px;
   font-size: 0.72rem;
   font-weight: 700;
+  display: inline-flex;
+  align-items: center;
 }
 
 .working-pill {
@@ -766,7 +780,7 @@
 }
 
 .roster-header-cell.today-col {
-  background: rgba(148, 58, 31, 0.08);
+  background: var(--primary-muted);
 }
 
 .roster-header-cell .day-name {
@@ -832,15 +846,23 @@
 }
 
 .roster-slot-cell.today-slot {
-  background: rgba(148, 58, 31, 0.02);
+  background: rgba(122, 85, 58, 0.04);
 }
 
 .shift-chip {
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-radius: 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  border: none;
+  outline: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.shift-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 .shift-chip-name {
@@ -1020,8 +1042,8 @@
 }
 
 .system-access-card.active {
-  border-color: rgba(148, 58, 31, 0.4);
-  background: rgba(148, 58, 31, 0.03);
+  border-color: var(--primary);
+  background: rgba(122, 85, 58, 0.04);
 }
 
 .system-access-header {
@@ -1041,7 +1063,7 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(148, 58, 31, 0.12);
+  background: var(--primary-muted);
   color: var(--primary);
   display: flex;
   align-items: center;

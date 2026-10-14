@@ -3,7 +3,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #F4F1EE;
+  background: var(--bg);
   position: relative;
   overflow: hidden;
   padding: 24px;
@@ -19,29 +19,29 @@
 }
 .blob-1 {
   width: 420px; height: 420px;
-  background: radial-gradient(circle, #943A1F 0%, transparent 70%);
+  background: radial-gradient(circle, var(--mocha) 0%, transparent 70%);
   top: -120px; left: -100px;
 }
 .blob-2 {
   width: 320px; height: 320px;
-  background: radial-gradient(circle, #D4856A 0%, transparent 70%);
+  background: radial-gradient(circle, var(--caramel) 0%, transparent 70%);
   bottom: -80px; right: -60px;
   opacity: 0.25;
 }
 .blob-3 {
   width: 200px; height: 200px;
-  background: radial-gradient(circle, #C87941 0%, transparent 70%);
+  background: radial-gradient(circle, var(--tan) 0%, transparent 70%);
   bottom: 30%; left: 60%;
-  opacity: 0.18;
+  opacity: 0.2;
 }
 
 /* Card */
 .login-card {
-  background: rgba(255,255,255,0.92);
+  background: rgba(251, 245, 234, 0.95);
   backdrop-filter: blur(20px);
   border-radius: 24px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.06);
-  border: 1px solid rgba(255,255,255,0.8);
+  box-shadow: 0 20px 60px rgba(59, 36, 22, 0.15), 0 2px 8px rgba(59, 36, 22, 0.07);
+  border: 1px solid var(--border-light);
   padding: 40px 36px;
   width: 100%;
   max-width: 400px;
@@ -61,18 +61,18 @@
   width: 60px;
   height: 60px;
   border-radius: 16px;
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--mocha) 0%, var(--caramel) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   margin-bottom: 16px;
-  box-shadow: 0 8px 24px rgba(148,58,31,0.4);
+  box-shadow: 0 8px 24px rgba(122, 74, 43, 0.35);
 }
 .login-title {
   font-size: 1.875rem;
   font-weight: 800;
-  color: var(--text-primary);
+  color: var(--espresso);
   letter-spacing: -0.02em;
 }
 .login-subtitle {
@@ -84,7 +84,7 @@
 /* Demo hint */
 .login-demo-hint {
   background: var(--primary-muted);
-  border: 1px solid rgba(148,58,31,0.15);
+  border: 1px solid rgba(122, 74, 43, 0.2);
   border-radius: var(--radius-md);
   padding: 10px 14px;
   font-size: 0.8rem;

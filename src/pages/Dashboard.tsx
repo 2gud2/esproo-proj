@@ -237,45 +237,50 @@ export default function DashboardPage() {
       value: `₱${todayRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       sub: `${todaySales.length} transaction${todaySales.length === 1 ? '' : 's'} today`,
       icon: TrendingUp,
-      color: '#943A1F',
-      bg: 'rgba(148,58,31,0.1)',
+      color: '#F3E9D7',
+      bg: 'rgba(243, 233, 215, 0.16)',
       route: user?.role === 'admin' ? '/reports' : '/pos',
+      isHero: true,
     },
     {
       label: 'Transaction Count',
       value: todaySales.length.toString(),
       sub: todaySales.length > 0 ? 'Completed today' : 'No sales yet today',
       icon: ShoppingBag,
-      color: '#1565C0',
-      bg: 'rgba(21,101,192,0.1)',
+      color: '#7A553A',
+      bg: 'rgba(122, 85, 58, 0.12)',
       route: user?.role === 'admin' ? '/reports' : '/pos',
+      isHero: false,
     },
     {
       label: 'Total Ingredients in Stock',
       value: ingredients.filter(i => i.stock_quantity > 0).length.toString(),
       sub: `${ingredients.length} raw ingredient item${ingredients.length === 1 ? '' : 's'} tracked`,
       icon: Package,
-      color: '#2E7D32',
-      bg: 'rgba(46,125,50,0.1)',
+      color: '#2D6A4F',
+      bg: 'rgba(45, 106, 79, 0.12)',
       route: '/inventory',
+      isHero: false,
     },
     {
       label: 'Stock Alerts',
       value: totalStockAlerts.toString(),
       sub: `${lowStockCount} low · ${outOfStockCount} out`,
       icon: AlertTriangle,
-      color: totalStockAlerts > 0 ? '#E65100' : '#2E7D32',
-      bg: totalStockAlerts > 0 ? 'rgba(230,81,0,0.1)' : 'rgba(46,125,50,0.1)',
+      color: totalStockAlerts > 0 ? '#C2671A' : '#2D6A4F',
+      bg: totalStockAlerts > 0 ? 'rgba(194, 103, 26, 0.12)' : 'rgba(45, 106, 79, 0.12)',
       route: totalStockAlerts > 0 ? (outOfStockCount > 0 ? '/inventory?filter=out' : '/inventory?filter=low') : '/inventory',
+      isHero: false,
     },
     {
       label: 'Top Seller Today',
       value: topSellerToday ? topSellerToday.name : 'None yet',
       sub: topSellerToday ? `${topSellerToday.qtySold} sold today` : 'No orders completed today',
       icon: Flame,
-      color: '#D97706',
-      bg: 'rgba(217,119,6,0.1)',
+      color: '#B08968',
+      bg: 'rgba(176, 137, 104, 0.14)',
       route: user?.role === 'admin' ? '/reports' : '/pos',
+      isHero: false,
     },
   ];
 
@@ -316,7 +321,7 @@ export default function DashboardPage() {
             {statCards.map((card) => (
               <motion.div
                 key={card.label}
-                className="card stat-card compact clickable"
+                className={`card stat-card compact clickable${card.isHero ? ' hero-card' : ''}`}
                 variants={fade}
                 onClick={() => navigate(card.route)}
                 whileHover={{ scale: 1.015 }}
@@ -332,11 +337,28 @@ export default function DashboardPage() {
               >
                 <div className="stat-card-top">
                   <div className="stat-icon" style={{ background: card.bg, color: card.color }}>
-                    <card.icon size={18} />
+                    <card.icon size={20} />
                   </div>
-                  <div className="stat-arrow-hint">
-                    <span>Open</span>
-                    <ChevronRight size={14} />
+                  <div className="stat-card-top-right">
+                    {card.isHero && weeklyChartData.length > 0 && (
+                      <div className="hero-sparkline" aria-hidden="true" title="Weekly sales volume">
+                        {weeklyChartData.map((d, idx) => {
+                          const max = Math.max(...weeklyChartData.map(item => item.sales), 1);
+                          const heightPct = Math.max(18, Math.round((d.sales / max) * 100));
+                          return (
+                            <span
+                              key={idx}
+                              className="spark-bar"
+                              style={{ height: `${heightPct}%` }}
+                            />
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="stat-arrow-hint">
+                      <span>Open</span>
+                      <ChevronRight size={14} />
+                    </div>
                   </div>
                 </div>
                 <div className="stat-value">{card.value}</div>
@@ -386,23 +408,39 @@ export default function DashboardPage() {
                   </button>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={210}>
-                <AreaChart data={activeChartData} margin={{ top: 8, right: 8, bottom: 0, left: -15 }}>
+              <ResponsiveContainer width="100%" height={230}>
+                <AreaChart data={activeChartData} margin={{ top: 10, right: 10, bottom: 0, left: -10 }}>
                   <defs>
                     <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#943A1F" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#943A1F" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#C08F5E" stopOpacity={0.45} />
+                      <stop offset="100%" stopColor="#C08F5E" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => `₱${v >= 1000 ? (v/1000).toFixed(0) + 'k' : v}`} />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => `₱${v >= 1000 ? Number((v/1000).toFixed(1)) + 'k' : v}`} />
                   <Tooltip
-                    contentStyle={{ background: 'var(--secondary)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13 }}
+                    contentStyle={{
+                      background: '#241712',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 12,
+                      color: '#F3E9D7',
+                      fontSize: 13,
+                      boxShadow: '0 8px 24px rgba(36,23,18,0.4)',
+                      padding: '8px 12px'
+                    }}
                     formatter={(v: any) => [`₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, 'Revenue']}
-                    cursor={{ stroke: 'var(--primary)', strokeWidth: 1.5 }}
+                    cursor={{ stroke: '#C08F5E', strokeWidth: 1.5, strokeDasharray: '4 4' }}
                   />
-                  <Area type="monotone" dataKey="sales" stroke="var(--primary)" strokeWidth={2.5} fill="url(#salesGrad)" dot={{ r: 3, fill: 'var(--primary)' }} activeDot={{ r: 6, fill: 'var(--primary)' }} />
+                  <Area
+                    type="monotone"
+                    dataKey="sales"
+                    stroke="#7A4A2B"
+                    strokeWidth={3}
+                    fill="url(#salesGrad)"
+                    dot={false}
+                    activeDot={{ r: 6, fill: '#FFFFFF', stroke: '#7A4A2B', strokeWidth: 3 }}
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </motion.div>

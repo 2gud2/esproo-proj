@@ -753,6 +753,13 @@ export default function InventoryPage() {
               <Package size={15} />
               <span>Stock Master List &amp; Batches</span>
               <span className="inv-nav-pill">{ingredients.length}</span>
+              {activeTab === 'inventory' && (
+                <motion.div
+                  layoutId="inv-active-tab-line"
+                  className="inv-nav-tab-indicator"
+                  transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                />
+              )}
             </button>
             <button
               type="button"
@@ -762,6 +769,13 @@ export default function InventoryPage() {
               <BarChart3 size={15} />
               <span>Raw Ingredients &amp; Supplies Valuation Report</span>
               <span className="inv-nav-pill">{inventoryValuationData.items.length}</span>
+              {activeTab === 'valuation' && (
+                <motion.div
+                  layoutId="inv-active-tab-line"
+                  className="inv-nav-tab-indicator"
+                  transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                />
+              )}
             </button>
           </div>
 

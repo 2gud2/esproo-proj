@@ -181,7 +181,7 @@
   font-weight: 800;
   font-size: 0.95rem;
   color: var(--text-primary);
-  background: rgba(148, 58, 31, 0.05);
+  background: var(--surface-2);
 }
 
 .profit-pill-badge {
@@ -216,7 +216,7 @@
 }
 .menu-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 8px 24px rgba(148, 58, 31, 0.08);
+  box-shadow: 0 8px 24px rgba(59, 42, 34, 0.08);
 }
 .menu-card.inactive {
   opacity: 0.55;
@@ -972,11 +972,11 @@
 }
 
 .shared-supplies-card {
-  border-left: 3px solid var(--primary);
+  border-color: var(--border);
 }
 
 .unassigned-supplies-card {
-  border-left: 3px solid var(--warning);
+  border-color: var(--border);
 }
 
 .supply-size-header {
@@ -1644,7 +1644,7 @@
 
 .addons-search-wrapper:focus-within {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(184, 115, 51, 0.12);
+  box-shadow: 0 0 0 3px var(--primary-muted);
 }
 
 .addons-search-icon {
@@ -1733,7 +1733,7 @@
 
 .addon-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 6px 18px rgba(184, 115, 51, 0.08);
+  box-shadow: 0 6px 18px rgba(59, 42, 34, 0.08);
   transform: translateY(-2px);
 }
 
@@ -1810,9 +1810,9 @@
 }
 
 .category-chip {
-  background: rgba(184, 115, 51, 0.1);
+  background: var(--primary-muted);
   color: var(--primary);
-  border: 1px solid rgba(184, 115, 51, 0.2);
+  border: 1px solid rgba(122, 85, 58, 0.2);
 }
 
 .items-chip {
@@ -1944,7 +1944,7 @@
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
-  box-shadow: 0 2px 6px rgba(184, 115, 51, 0.25);
+  box-shadow: 0 2px 6px var(--primary-shadow);
 }
 
 /* Items Picker Box */

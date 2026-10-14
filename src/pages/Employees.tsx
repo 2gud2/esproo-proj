@@ -697,12 +697,9 @@ export default function EmployeesPage() {
         <div className="page-body employees-page-body">
           {/* Header Description */}
           <div className="emp-page-header">
-            <div>
-              <h1 className="emp-page-title">Espro Staff Operations</h1>
-              <p className="emp-page-subtitle">
-                Manage your café staff, view real-time attendance, and schedule weekly barista rosters.
-              </p>
-            </div>
+            <p className="emp-page-subtitle">
+              Manage your café staff, view real-time attendance, and schedule weekly barista rosters.
+            </p>
           </div>
 
           {/* ════════════════════════════════════════════════════════════ */}
@@ -765,15 +762,24 @@ export default function EmployeesPage() {
           {/* ════════════════════════════════════════════════════════════ */}
           <div className="emp-tabs-nav">
             <button
+              type="button"
               className={`emp-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
               onClick={() => setActiveTab('directory')}
             >
               <Users size={18} />
               <span>Staff Directory</span>
               <span className="emp-tab-count">{employees.length}</span>
+              {activeTab === 'directory' && (
+                <motion.div
+                  layoutId="emp-active-tab-line"
+                  className="emp-tab-indicator"
+                  transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                />
+              )}
             </button>
 
             <button
+              type="button"
               className={`emp-tab-btn ${activeTab === 'attendance' ? 'active' : ''}`}
               onClick={() => setActiveTab('attendance')}
             >
@@ -782,14 +788,29 @@ export default function EmployeesPage() {
               {metrics.onDutyCount > 0 && (
                 <span className="emp-tab-pulse green">{metrics.onDutyCount} in</span>
               )}
+              {activeTab === 'attendance' && (
+                <motion.div
+                  layoutId="emp-active-tab-line"
+                  className="emp-tab-indicator"
+                  transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                />
+              )}
             </button>
 
             <button
+              type="button"
               className={`emp-tab-btn ${activeTab === 'roster' ? 'active' : ''}`}
               onClick={() => setActiveTab('roster')}
             >
               <Calendar size={18} />
               <span>Shift Roster & Scheduling</span>
+              {activeTab === 'roster' && (
+                <motion.div
+                  layoutId="emp-active-tab-line"
+                  className="emp-tab-indicator"
+                  transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                />
+              )}
             </button>
           </div>
 
@@ -1139,7 +1160,7 @@ export default function EmployeesPage() {
                               <span
                                 className="shift-pill"
                                 style={{
-                                  borderColor: att.shift_template.color,
+                                  backgroundColor: `${att.shift_template.color}18`,
                                   color: att.shift_template.color,
                                 }}
                               >
@@ -1313,7 +1334,6 @@ export default function EmployeesPage() {
                                 <div
                                   className="shift-chip"
                                   style={{
-                                    borderLeft: `4px solid ${sched.shift_template.color}`,
                                     backgroundColor: `${sched.shift_template.color}15`,
                                   }}
                                 >
@@ -1995,12 +2015,22 @@ export default function EmployeesPage() {
                           <div
                             key={tpl.id}
                             className="template-card-row"
-                            style={{ borderLeft: `5px solid ${tpl.color}` }}
                           >
-                            <div>
-                              <strong>{tpl.name}</strong>
-                              <div className="template-meta">
-                                {tpl.start_time} - {tpl.end_time} • {tpl.break_minutes}m break
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <span
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: '50%',
+                                  backgroundColor: tpl.color,
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <div>
+                                <strong>{tpl.name}</strong>
+                                <div className="template-meta">
+                                  {tpl.start_time} - {tpl.end_time} • {tpl.break_minutes}m break
+                                </div>
                               </div>
                             </div>
                             <button

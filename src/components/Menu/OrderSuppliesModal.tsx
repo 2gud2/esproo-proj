@@ -388,7 +388,7 @@ export default function OrderSuppliesModal({
                           width: 40,
                           height: 40,
                           borderRadius: 'var(--radius-full)',
-                          background: 'rgba(184, 115, 51, 0.12)',
+                          background: 'var(--primary-muted)',
                           color: 'var(--primary)',
                           display: 'flex',
                           alignItems: 'center',

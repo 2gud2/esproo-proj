@@ -481,12 +481,12 @@
   font-weight: 600;
   cursor: pointer;
   transition: all var(--transition);
-  box-shadow: 0 2px 5px rgba(148, 58, 31, 0.25);
+  box-shadow: 0 2px 5px var(--primary-shadow);
 }
 
 .btn-export-dropdown:hover:not(:disabled) {
   filter: brightness(1.1);
-  box-shadow: 0 4px 10px rgba(148, 58, 31, 0.35);
+  box-shadow: 0 4px 10px var(--primary-shadow);
   transform: translateY(-1px);
 }
 
@@ -579,7 +579,7 @@
 
 .export-dropdown-icon.full {
   color: var(--primary);
-  background: rgba(148, 58, 31, 0.08);
+  background: var(--primary-muted);
 }
 
 .export-dropdown-divider {
@@ -605,7 +605,6 @@
   padding: 12px 16px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-left: 4px solid var(--primary);
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;

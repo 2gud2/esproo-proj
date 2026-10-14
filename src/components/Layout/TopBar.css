@@ -1,7 +1,7 @@
 .topbar {
   height: var(--topbar-height);
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-light);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -9,7 +9,7 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  box-shadow: var(--shadow-xs);
+  box-shadow: 0 1px 4px rgba(59, 36, 22, 0.05);
 }
 
 .topbar-left {
@@ -22,8 +22,8 @@
 .topbar-title {
   font-size: 1.25rem;
   font-weight: 700;
-  color: var(--primary);
-  letter-spacing: -0.01em;
+  color: var(--espresso);
+  letter-spacing: -0.015em;
   margin: 0;
   white-space: nowrap;
 }
@@ -37,7 +37,7 @@
 }
 .topbar-search-icon {
   position: absolute;
-  left: 11px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-muted);
@@ -45,7 +45,7 @@
 }
 .topbar-search-input {
   width: 100%;
-  padding: 8px 12px 8px 34px;
+  padding: 8px 14px 8px 36px;
   border: 1.5px solid var(--border);
   border-radius: var(--radius-full);
   font-family: var(--font);
@@ -65,16 +65,20 @@
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
+}
+
+.topbar-right .btn {
+  border-radius: var(--radius-full);
 }
 
 .topbar-timeclock-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
   background: var(--primary);
   color: #fff;
   border: 1px solid transparent;
@@ -83,13 +87,13 @@
   cursor: pointer;
   white-space: nowrap;
   transition: all var(--transition);
-  box-shadow: 0 2px 6px rgba(148, 58, 31, 0.2);
+  box-shadow: 0 2px 8px var(--primary-shadow);
 }
 
 .topbar-timeclock-btn:hover {
   background: var(--primary-dark);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(148, 58, 31, 0.35);
+  box-shadow: 0 4px 14px var(--primary-shadow);
   transform: translateY(-1px);
 }
 
@@ -99,16 +103,17 @@
   }
   .topbar-timeclock-btn {
     padding: 8px;
+    border-radius: var(--radius-full);
   }
 }
 
 .topbar-icon-btn {
   position: relative;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-full);
   border: 1.5px solid var(--border);
-  background: transparent;
+  background: var(--surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -116,10 +121,12 @@
   cursor: pointer;
   transition: all var(--transition);
 }
-.topbar-icon-btn:hover {
+.topbar-icon-btn:hover,
+.topbar-icon-btn.active {
   background: var(--surface-2);
   color: var(--text-primary);
-  border-color: var(--text-muted);
+  border-color: var(--tan);
+  transform: translateY(-1px);
 }
 
 .topbar-notif-dot {
@@ -134,10 +141,10 @@
 }
 
 .topbar-avatar {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--mocha) 0%, var(--caramel) 100%);
   color: #fff;
   display: flex;
   align-items: center;
@@ -146,10 +153,13 @@
   font-weight: 700;
   cursor: pointer;
   flex-shrink: 0;
-  transition: transform var(--transition);
+  border: 2px solid var(--border-light);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--transition), box-shadow var(--transition);
 }
 .topbar-avatar:hover {
   transform: scale(1.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .topbar-menu-btn {
@@ -168,24 +178,24 @@
   right: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 12px 36px rgba(59, 36, 22, 0.15);
   z-index: 1000;
   overflow: hidden;
 }
 
 .notifs-popover {
-  width: 340px;
+  width: 350px;
   max-width: 90vw;
 }
 
 .help-popover {
-  width: 300px;
+  width: 310px;
   max-width: 90vw;
 }
 
 .popover-header {
-  padding: 14px 16px;
+  padding: 15px 18px;
   border-bottom: 1px solid var(--border-light);
   background: var(--surface-2);
 }
@@ -198,30 +208,30 @@
 }
 
 .popover-title {
-  font-size: 0.875rem;
+  font-size: 0.9rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--espresso);
 }
 
 .popover-subtitle {
   display: block;
   font-size: 0.72rem;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 /* Notifications list */
 .notifs-list {
-  max-height: 280px;
+  max-height: 290px;
   overflow-y: auto;
-  padding: 6px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .notifs-empty {
-  padding: 30px 16px;
+  padding: 32px 16px;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -235,22 +245,23 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px;
+  padding: 10px 12px;
   border-radius: var(--radius-md);
   background: var(--surface);
-  border: 1px solid transparent;
+  border: 1px solid var(--border-light);
   cursor: pointer;
   transition: all var(--transition);
 }
 
 .notif-item:hover {
   background: var(--surface-2);
-  border-color: var(--border);
+  border-color: var(--tan);
+  transform: translateX(2px);
 }
 
 .notif-icon-box {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-md);
   background: var(--surface-2);
   display: flex;
@@ -277,7 +288,7 @@
 .notif-name {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--espresso);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -298,7 +309,7 @@
 }
 
 .popover-footer {
-  padding: 10px 16px;
+  padding: 11px 18px;
   background: var(--surface-2);
   border-top: 1px solid var(--border-light);
   display: flex;
@@ -317,7 +328,7 @@
 
 /* Help popover content */
 .help-body {
-  padding: 16px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -326,7 +337,7 @@
 .help-text {
   font-size: 0.8125rem;
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: 1.45;
   margin: 0;
 }
 
@@ -334,7 +345,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 11px 14px;
   background: var(--surface-2);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
@@ -343,7 +354,7 @@
 .help-contact-title {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--espresso);
 }
 
 .help-contact-email {

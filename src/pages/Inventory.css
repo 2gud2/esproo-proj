@@ -7,7 +7,7 @@
 
 /* Row expander button and parent row */
 .parent-row-expanded > td {
-  background: rgba(148, 58, 31, 0.04);
+  background: var(--surface-2);
 }
 
 .batch-expand-btn {
@@ -192,7 +192,7 @@
 }
 
 .adjust-modal-type-btn.active.set {
-  background: rgba(184, 115, 51, 0.12);
+  background: var(--primary-muted);
   border-color: var(--primary);
   color: var(--primary);
 }
@@ -329,7 +329,7 @@
 .inventory-stat-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
-  border-color: rgba(148, 58, 31, 0.35);
+  border-color: var(--tan);
 }
 
 .inventory-stat-card:focus-visible {
@@ -339,7 +339,7 @@
 .inventory-stat-card.active {
   border-color: var(--primary);
   background: var(--primary-muted);
-  box-shadow: 0 4px 14px rgba(148, 58, 31, 0.14);
+  box-shadow: 0 4px 14px var(--primary-shadow);
 }
 
 .inventory-stat-card .stat-sub {
@@ -395,9 +395,8 @@
   align-items: center;
   gap: 8px;
   border-bottom: 2px solid var(--border);
-  padding-bottom: 2px;
   margin-bottom: 18px;
-  overflow-x: auto;
+  position: relative;
 }
 
 .inv-nav-tab-btn {
@@ -407,13 +406,14 @@
   padding: 10px 18px;
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -4px;
+  margin-bottom: -2px;
+  position: relative;
+  z-index: 1;
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease;
   white-space: nowrap;
 }
 
@@ -425,8 +425,19 @@
 
 .inv-nav-tab-btn.active {
   color: var(--primary);
-  border-bottom-color: var(--primary);
   font-weight: 700;
+}
+
+.inv-nav-tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background: var(--primary);
+  border-radius: 3px 3px 0 0;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .inv-nav-pill {
@@ -439,9 +450,9 @@
 }
 
 .inv-nav-pill.valuation-pill {
-  background: rgba(148, 58, 31, 0.1);
+  background: var(--primary-muted);
   color: var(--primary);
-  border-color: rgba(148, 58, 31, 0.25);
+  border-color: rgba(122, 85, 58, 0.25);
 }
 
 /* ════════════════════════════════════════════════════════════ */

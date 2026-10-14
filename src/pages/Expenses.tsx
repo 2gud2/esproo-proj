@@ -17,10 +17,11 @@ const PAGE_SIZE = 20;
 const defaultForm = { description: '', amount: '', category: EXPENSE_CATEGORIES[0], date: format(new Date(), 'yyyy-MM-dd') };
 
 const COLORS = [
-  '#B87333', // Warm Copper
+  '#7A553A', // Mocha Bean
+  '#B08968', // Caramel Roast
   '#4A7C59', // Sage Green
   '#8B5E3C', // Deep Brown
-  '#D4A373', // Light Caramel
+  '#D6BFA6', // Cappuccino Tan
   '#2C5E8A', // Classic Blue
   '#E76F51', // Terracotta
   '#6B705C', // Olive
