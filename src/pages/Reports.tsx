@@ -1232,11 +1232,11 @@ export default function ReportsPage() {
                 >
                   Date:
                 </span>
-                <div className="period-tabs">
+                <div className="segmented">
                   {DATE_PRESET_OPTIONS.map((preset) => (
                     <button
                       key={preset.key}
-                      className={`period-tab${datePreset === preset.key ? ' active' : ''}`}
+                      className={`segment${datePreset === preset.key ? ' active' : ''}`}
                       onClick={() => handleSelectPreset(preset.key)}
                       type="button"
                     >
@@ -1292,11 +1292,12 @@ export default function ReportsPage() {
                   <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                     Type:
                   </span>
-                  <div className="period-tabs">
+                  <div className="segmented">
                     {(['all', 'dine_in', 'takeout'] as const).map((ot) => (
                       <button
                         key={ot}
-                        className={`period-tab${orderTypeFilter === ot ? ' active' : ''}`}
+                        type="button"
+                        className={`segment${orderTypeFilter === ot ? ' active' : ''}`}
                         onClick={() => setOrderTypeFilter(ot)}
                       >
                         {ot === 'all' ? 'All' : ot === 'dine_in' ? 'Dine-in' : 'Takeout'}
@@ -1310,11 +1311,12 @@ export default function ReportsPage() {
                   <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                     Status:
                   </span>
-                  <div className="period-tabs">
+                  <div className="segmented">
                     {(['all', 'completed', 'refunded', 'voided'] as const).map((st) => (
                       <button
                         key={st}
-                        className={`period-tab${statusFilter === st ? ' active' : ''}`}
+                        type="button"
+                        className={`segment${statusFilter === st ? ' active' : ''}`}
                         onClick={() => setStatusFilter(st)}
                       >
                         {st.charAt(0).toUpperCase() + st.slice(1)}
@@ -1327,11 +1329,12 @@ export default function ReportsPage() {
           </div>
 
           {/* Navigation Tabs */}
-          <div className="reports-tabs">
+          <div className="tabs-underline">
             {tabs.map((t) => (
               <button
                 key={t.key}
-                className={`reports-tab${tab === t.key ? ' active' : ''}`}
+                type="button"
+                className={`tab${tab === t.key ? ' active' : ''}`}
                 onClick={() => setTab(t.key)}
               >
                 <t.icon size={16} />

@@ -39,40 +39,6 @@
   color: var(--text-primary);
 }
 
-.view-toggle-group {
-  display: inline-flex;
-  background: var(--surface-2);
-  padding: 3px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  gap: 2px;
-}
-
-.view-toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.view-toggle-btn:hover {
-  color: var(--text-primary);
-}
-
-.view-toggle-btn.active {
-  background: var(--surface);
-  color: var(--primary);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
 
 /* Menu list view */
 .menu-list-card {
@@ -533,42 +499,6 @@
   }
 }
 
-/* ─── Segmented Navigation (Menu Items | Add-ons) ─── */
-.menu-segmented-nav {
-  display: flex;
-  background: var(--surface-2);
-  padding: 4px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  gap: 6px;
-  margin-bottom: 20px;
-  width: fit-content;
-}
-
-.menu-segment-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 18px;
-  border-radius: var(--radius-md);
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.menu-segment-btn:hover {
-  color: var(--text-primary);
-}
-
-.menu-segment-btn.active {
-  background: var(--surface);
-  color: var(--primary);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-}
 
 /* ─── Sizes Editor Styles ─── */
 .sizes-editor-section {

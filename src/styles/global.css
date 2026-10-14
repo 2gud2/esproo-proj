@@ -326,3 +326,230 @@ h4 { font-size: 1rem; font-weight: 600; color: var(--espresso); }
   .sidebar { transform: translateX(-100%); }
   .sidebar.open { transform: translateX(0); }
 }
+
+/* ════════════════════════════════════════════════════════════ */
+/* Unified Navigation & Tab Styling                             */
+/* Pattern A: Underline Tabs (Page-level section navigation)    */
+/* Pattern B: Segmented Pills (Small filters & toggles)         */
+/* ════════════════════════════════════════════════════════════ */
+
+/* --- Pattern A: Underline Tabs --- */
+.tabs-underline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tabs-underline::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs-underline .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -1px;
+  position: relative;
+  z-index: 1;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition), background-color var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tabs-underline .tab:hover:not(.active) {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border-top-left-radius: var(--radius-sm);
+  border-top-right-radius: var(--radius-sm);
+}
+
+.tabs-underline .tab.active {
+  color: var(--mocha);
+  border-bottom-color: var(--mocha);
+  font-weight: 700;
+}
+
+.tabs-underline .tab:focus {
+  outline: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.tabs-underline .tab:focus-visible {
+  outline: 2px solid var(--caramel);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Framer-motion indicator animation support */
+.tabs-underline .tab:has(.tab-indicator).active {
+  border-bottom-color: transparent;
+}
+
+.tabs-underline .tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background: var(--mocha);
+  border-radius: 3px 3px 0 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Count Pill in Underline Tabs */
+.tabs-underline .tab-count {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  line-height: 1.2;
+  transition: all var(--transition);
+}
+
+.tabs-underline .tab.active .tab-count {
+  background: var(--primary-muted);
+  color: var(--mocha);
+  border-color: rgba(122, 74, 43, 0.25);
+}
+
+/* --- Pattern B: Segmented Pills --- */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-2);
+  padding: 4px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-light);
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  max-width: 100%;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.segmented::-webkit-scrollbar {
+  display: none;
+}
+
+.segmented .segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.segmented .segment:hover:not(.active) {
+  color: var(--text-primary);
+  background: rgba(122, 74, 43, 0.08);
+}
+
+.segmented .segment.active {
+  background: var(--mocha);
+  color: var(--cream);
+  border: none;
+  outline: none;
+  box-shadow: 0 2px 8px var(--primary-shadow);
+}
+
+.segmented .segment:focus {
+  outline: none;
+  border: none;
+}
+
+.segmented .segment:focus-visible {
+  outline: 2px solid var(--caramel);
+  outline-offset: 2px;
+}
+
+/* Stacked text variant (e.g. Dashboard sales trend) */
+.segmented .segment.segment-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.segmented .segment-title,
+.segmented .trend-tab-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.85;
+}
+
+.segmented .segment.active .segment-title,
+.segmented .segment.active .trend-tab-title {
+  color: var(--cream);
+  opacity: 0.92;
+}
+
+.segmented .segment-val,
+.segmented .trend-tab-val {
+  font-size: 0.85rem;
+  font-weight: 800;
+  margin-top: 1px;
+}
+
+.segmented .segment.active .segment-val,
+.segmented .segment.active .trend-tab-val {
+  color: var(--cream);
+}
+
+/* Count badge inside Segmented Pills */
+.segmented .segment-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--tan);
+  color: var(--text-secondary);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  line-height: 1.2;
+  transition: all var(--transition);
+}
+
+.segmented .segment.active .segment-count {
+  background: rgba(243, 233, 215, 0.25);
+  color: var(--cream);
+}
+

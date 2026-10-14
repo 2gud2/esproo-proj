@@ -744,35 +744,35 @@ export default function InventoryPage() {
         />
         <main className="page-body">
           {/* View Mode Navigation Tabs */}
-          <div className="inv-nav-tabs">
+          <div className="tabs-underline">
             <button
               type="button"
-              className={`inv-nav-tab-btn ${activeTab === 'inventory' ? 'active' : ''}`}
+              className={`tab ${activeTab === 'inventory' ? 'active' : ''}`}
               onClick={() => setActiveTab('inventory')}
             >
               <Package size={15} />
               <span>Stock Master List &amp; Batches</span>
-              <span className="inv-nav-pill">{ingredients.length}</span>
+              <span className="tab-count">{ingredients.length}</span>
               {activeTab === 'inventory' && (
                 <motion.div
                   layoutId="inv-active-tab-line"
-                  className="inv-nav-tab-indicator"
+                  className="tab-indicator"
                   transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                 />
               )}
             </button>
             <button
               type="button"
-              className={`inv-nav-tab-btn ${activeTab === 'valuation' ? 'active' : ''}`}
+              className={`tab ${activeTab === 'valuation' ? 'active' : ''}`}
               onClick={() => setActiveTab('valuation')}
             >
               <BarChart3 size={15} />
               <span>Raw Ingredients &amp; Supplies Valuation Report</span>
-              <span className="inv-nav-pill">{inventoryValuationData.items.length}</span>
+              <span className="tab-count">{inventoryValuationData.items.length}</span>
               {activeTab === 'valuation' && (
                 <motion.div
                   layoutId="inv-active-tab-line"
-                  className="inv-nav-tab-indicator"
+                  className="tab-indicator"
                   transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                 />
               )}
@@ -913,30 +913,33 @@ export default function InventoryPage() {
               </div>
 
               {/* Item Type Filter Tabs */}
-              <div className="inventory-type-tabs">
+              <div className="segmented">
                 <button
-                  className={`type-tab-btn ${itemTypeFilter === 'all' ? 'active' : ''}`}
+                  type="button"
+                  className={`segment ${itemTypeFilter === 'all' ? 'active' : ''}`}
                   onClick={() => setItemTypeFilter('all')}
                 >
                   <Layers size={13} />
                   <span>All</span>
-                  <span className="type-tab-count">{ingredients.length}</span>
+                  <span className="segment-count">{ingredients.length}</span>
                 </button>
                 <button
-                  className={`type-tab-btn ${itemTypeFilter === 'ingredient' ? 'active' : ''}`}
+                  type="button"
+                  className={`segment ${itemTypeFilter === 'ingredient' ? 'active' : ''}`}
                   onClick={() => setItemTypeFilter('ingredient')}
                 >
                   <Utensils size={13} />
                   <span>Ingredients</span>
-                  <span className="type-tab-count">{ingredientCount}</span>
+                  <span className="segment-count">{ingredientCount}</span>
                 </button>
                 <button
-                  className={`type-tab-btn ${itemTypeFilter === 'supply' ? 'active' : ''}`}
+                  type="button"
+                  className={`segment ${itemTypeFilter === 'supply' ? 'active' : ''}`}
                   onClick={() => setItemTypeFilter('supply')}
                 >
                   <Package size={13} />
                   <span>Supplies</span>
-                  <span className="type-tab-count">{supplyCount}</span>
+                  <span className="segment-count">{supplyCount}</span>
                 </button>
               </div>
             </div>

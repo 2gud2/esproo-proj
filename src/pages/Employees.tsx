@@ -760,19 +760,19 @@ export default function EmployeesPage() {
           {/* ════════════════════════════════════════════════════════════ */}
           {/* NAVIGATION TABS                                              */}
           {/* ════════════════════════════════════════════════════════════ */}
-          <div className="emp-tabs-nav">
+          <div className="tabs-underline">
             <button
               type="button"
-              className={`emp-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
+              className={`tab ${activeTab === 'directory' ? 'active' : ''}`}
               onClick={() => setActiveTab('directory')}
             >
               <Users size={18} />
               <span>Staff Directory</span>
-              <span className="emp-tab-count">{employees.length}</span>
+              <span className="tab-count">{employees.length}</span>
               {activeTab === 'directory' && (
                 <motion.div
                   layoutId="emp-active-tab-line"
-                  className="emp-tab-indicator"
+                  className="tab-indicator"
                   transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                 />
               )}
@@ -780,18 +780,18 @@ export default function EmployeesPage() {
 
             <button
               type="button"
-              className={`emp-tab-btn ${activeTab === 'attendance' ? 'active' : ''}`}
+              className={`tab ${activeTab === 'attendance' ? 'active' : ''}`}
               onClick={() => setActiveTab('attendance')}
             >
               <Clock size={18} />
-              <span>Attendance & Timesheets</span>
+              <span>Attendance &amp; Timesheets</span>
               {metrics.onDutyCount > 0 && (
                 <span className="emp-tab-pulse green">{metrics.onDutyCount} in</span>
               )}
               {activeTab === 'attendance' && (
                 <motion.div
                   layoutId="emp-active-tab-line"
-                  className="emp-tab-indicator"
+                  className="tab-indicator"
                   transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                 />
               )}
@@ -799,15 +799,15 @@ export default function EmployeesPage() {
 
             <button
               type="button"
-              className={`emp-tab-btn ${activeTab === 'roster' ? 'active' : ''}`}
+              className={`tab ${activeTab === 'roster' ? 'active' : ''}`}
               onClick={() => setActiveTab('roster')}
             >
               <Calendar size={18} />
-              <span>Shift Roster & Scheduling</span>
+              <span>Shift Roster &amp; Scheduling</span>
               {activeTab === 'roster' && (
                 <motion.div
                   layoutId="emp-active-tab-line"
-                  className="emp-tab-indicator"
+                  className="tab-indicator"
                   transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                 />
               )}
@@ -1057,11 +1057,12 @@ export default function EmployeesPage() {
 
               {/* Timesheet Date Filters & Actions */}
               <div className="emp-toolbar" style={{ marginTop: 24 }}>
-                <div className="date-pills">
+                <div className="segmented">
                   {(['today', 'week', 'month', 'custom'] as DateFilterRange[]).map(df => (
                     <button
                       key={df}
-                      className={`date-pill ${dateRangeType === df ? 'active' : ''}`}
+                      type="button"
+                      className={`segment ${dateRangeType === df ? 'active' : ''}`}
                       onClick={() => setDateRangeType(df)}
                     >
                       {df === 'today' ? 'Today' : df === 'week' ? 'This Week' : df === 'month' ? 'This Month' : 'Custom'}

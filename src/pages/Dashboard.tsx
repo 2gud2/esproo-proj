@@ -384,23 +384,26 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 {/* Period Selector Tabs: Today's Sales, Weekly Sales, Month Sales */}
-                <div className="trend-period-tabs">
+                <div className="segmented">
                   <button
-                    className={`trend-tab ${salesTrendPeriod === 'today' ? 'active' : ''}`}
+                    type="button"
+                    className={`segment segment-stacked ${salesTrendPeriod === 'today' ? 'active' : ''}`}
                     onClick={() => setSalesTrendPeriod('today')}
                   >
                     <span className="trend-tab-title">Today's Sales</span>
                     <span className="trend-tab-val">₱{todayTotal.toLocaleString('en-PH', { maximumFractionDigits: 0 })}</span>
                   </button>
                   <button
-                    className={`trend-tab ${salesTrendPeriod === 'weekly' ? 'active' : ''}`}
+                    type="button"
+                    className={`segment segment-stacked ${salesTrendPeriod === 'weekly' ? 'active' : ''}`}
                     onClick={() => setSalesTrendPeriod('weekly')}
                   >
                     <span className="trend-tab-title">Weekly Sales</span>
                     <span className="trend-tab-val">₱{weeklyTotal.toLocaleString('en-PH', { maximumFractionDigits: 0 })}</span>
                   </button>
                   <button
-                    className={`trend-tab ${salesTrendPeriod === 'monthly' ? 'active' : ''}`}
+                    type="button"
+                    className={`segment segment-stacked ${salesTrendPeriod === 'monthly' ? 'active' : ''}`}
                     onClick={() => setSalesTrendPeriod('monthly')}
                   >
                     <span className="trend-tab-title">Month Sales</span>
@@ -499,9 +502,14 @@ export default function DashboardPage() {
                 </h3>
                 <p className="page-subtitle">Ranked by actual quantity sold</p>
               </div>
-              <div className="period-tabs">
+              <div className="segmented">
                 {(['today', 'week', 'month'] as const).map(p => (
-                  <button key={p} className={`period-tab${bsPeriod === p ? ' active' : ''}`} onClick={() => setBsPeriod(p)}>
+                  <button
+                    key={p}
+                    type="button"
+                    className={`segment${bsPeriod === p ? ' active' : ''}`}
+                    onClick={() => setBsPeriod(p)}
+                  >
                     {p.charAt(0).toUpperCase() + p.slice(1)}
                   </button>
                 ))}

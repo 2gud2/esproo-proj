@@ -211,72 +211,7 @@
   gap: 12px;
 }
 
-/* Sales Trend Line Graph Period Tabs (Today, Weekly, Month) */
-.trend-period-tabs {
-  display: flex;
-  gap: 4px;
-  background: var(--surface-2);
-  padding: 4px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-light);
-}
 
-.trend-tab {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 6px 14px;
-  border-radius: var(--radius-full);
-  border: none;
-  outline: none;
-  background: transparent;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: left;
-  color: var(--text-muted);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.trend-tab:focus {
-  outline: none;
-  border: none;
-}
-
-.trend-tab:hover:not(.active) {
-  background: rgba(59, 36, 22, 0.05);
-  color: var(--text-primary);
-}
-
-.trend-tab.active {
-  background: var(--mocha);
-  color: var(--cream);
-  border: none;
-  outline: none;
-  box-shadow: 0 2px 10px var(--primary-shadow);
-}
-
-.trend-tab-title {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.85;
-}
-
-.trend-tab.active .trend-tab-title {
-  color: var(--cream);
-  opacity: 0.90;
-}
-
-.trend-tab-val {
-  font-size: 0.85rem;
-  font-weight: 800;
-  margin-top: 1px;
-}
-
-.trend-tab.active .trend-tab-val {
-  color: var(--cream);
-}
 
 /* 3. Low Stock Section */
 .clickable-title {
@@ -366,47 +301,7 @@
   color: var(--text-muted);
 }
 
-/* 4. Best Sellers Period Tabs & Table (Bottom full width) */
-.period-tabs {
-  display: flex;
-  background: var(--surface-2);
-  border-radius: var(--radius-full);
-  padding: 4px;
-  gap: 3px;
-  border: 1px solid var(--border-light);
-}
 
-.period-tab {
-  padding: 6px 14px;
-  border: none;
-  outline: none;
-  background: transparent;
-  border-radius: var(--radius-full);
-  font-family: var(--font);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all var(--transition);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.period-tab:focus {
-  outline: none;
-  border: none;
-}
-
-.period-tab.active {
-  background: var(--mocha);
-  color: var(--cream);
-  border: none;
-  outline: none;
-  box-shadow: 0 2px 8px var(--primary-shadow);
-}
-
-.period-tab:hover:not(.active) {
-  color: var(--text-primary);
-}
 
 .clickable-row {
   cursor: pointer;

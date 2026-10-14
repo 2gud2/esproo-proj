@@ -197,60 +197,6 @@
   color: var(--primary);
 }
 
-/* Inventory Type Filter Tabs */
-.inventory-type-tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  padding: 4px;
-  border-radius: var(--radius-lg);
-}
-
-.type-tab-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  background: transparent;
-  font-family: var(--font);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.type-tab-btn:hover {
-  background: var(--surface-2);
-  color: var(--text-primary);
-}
-
-.type-tab-btn.active {
-  background: var(--surface-2);
-  border-color: var(--border);
-  color: var(--primary);
-  font-weight: 700;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.type-tab-count {
-  font-size: 0.72rem;
-  font-weight: 700;
-  background: var(--border);
-  color: var(--text-secondary);
-  padding: 1px 6px;
-  border-radius: var(--radius-full);
-}
-
-.type-tab-btn.active .type-tab-count {
-  background: var(--primary);
-  color: #fff;
-}
-
 /* Item Type Modal Selector */
 .item-type-selector {
   display: grid;
@@ -387,73 +333,7 @@
   transform: scale(1.03);
 }
 
-/* ════════════════════════════════════════════════════════════ */
-/* Inventory Navigation Tabs                                    */
-/* ════════════════════════════════════════════════════════════ */
-.inv-nav-tabs {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-bottom: 2px solid var(--border);
-  margin-bottom: 18px;
-  position: relative;
-}
 
-.inv-nav-tab-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  background: transparent;
-  border: none;
-  margin-bottom: -2px;
-  position: relative;
-  z-index: 1;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: color 0.2s ease, background 0.2s ease;
-  white-space: nowrap;
-}
-
-.inv-nav-tab-btn:hover {
-  color: var(--text-primary);
-  background: var(--surface-2);
-  border-radius: 8px 8px 0 0;
-}
-
-.inv-nav-tab-btn.active {
-  color: var(--primary);
-  font-weight: 700;
-}
-
-.inv-nav-tab-indicator {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2.5px;
-  background: var(--primary);
-  border-radius: 3px 3px 0 0;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.inv-nav-pill {
-  background: var(--surface-2);
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  border: 1px solid var(--border);
-  font-weight: 600;
-}
-
-.inv-nav-pill.valuation-pill {
-  background: var(--primary-muted);
-  color: var(--primary);
-  border-color: rgba(122, 85, 58, 0.25);
-}
 
 /* ════════════════════════════════════════════════════════════ */
 /* Export Dropdown in Inventory                                 */

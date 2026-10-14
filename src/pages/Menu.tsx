@@ -705,21 +705,24 @@ export default function MenuPage() {
         />
 
         <main className="page-body">
-          {/* Top Segmented Control: Menu Items | Add-ons */}
-          <div className="menu-segmented-nav">
+          {/* Top Section Navigation: Menu Items | Add-ons */}
+          <div className="tabs-underline">
             <button
               type="button"
-              className={`menu-segment-btn ${mainTab === 'items' ? 'active' : ''}`}
+              className={`tab ${mainTab === 'items' ? 'active' : ''}`}
               onClick={() => setMainTab('items')}
             >
-              <Coffee size={16} /> Menu Items ({menuItems.length})
+              <Coffee size={16} />
+              <span>Menu Items</span>
+              <span className="tab-count">{menuItems.length}</span>
             </button>
             <button
               type="button"
-              className={`menu-segment-btn ${mainTab === 'addons' ? 'active' : ''}`}
+              className={`tab ${mainTab === 'addons' ? 'active' : ''}`}
               onClick={() => setMainTab('addons')}
             >
-              <Layers size={16} /> Add-ons & Customizations
+              <Layers size={16} />
+              <span>Add-ons &amp; Customizations</span>
             </button>
           </div>
 
@@ -841,10 +844,10 @@ export default function MenuPage() {
                     </div>
                   </div>
 
-                  <div className="view-toggle" style={{ flexShrink: 0 }}>
+                  <div className="segmented" style={{ flexShrink: 0 }}>
                     <button
                       type="button"
-                      className={`view-toggle-btn ${viewMode === 'card' ? 'active' : ''}`}
+                      className={`segment ${viewMode === 'card' ? 'active' : ''}`}
                       onClick={() => setViewMode('card')}
                       title="Card Grid View"
                     >
@@ -852,7 +855,7 @@ export default function MenuPage() {
                     </button>
                     <button
                       type="button"
-                      className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+                      className={`segment ${viewMode === 'list' ? 'active' : ''}`}
                       onClick={() => setViewMode('list')}
                       title="Table List View"
                     >
