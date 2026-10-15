@@ -228,6 +228,10 @@ export interface FullReportData {
     refundedCogsWastage: number;
     totalCogs: number;
     estimatedLinesCount: number;
+    beginningInventory?: number;
+    inventoryPurchases?: number;
+    totalGoodsAvailable?: number;
+    endingInventory?: number;
   };
   expenses: {
     ledger: Expense[];
@@ -676,74 +680,22 @@ export function buildExpensesCsv(data: FullReportData): string {
   const lines: string[] = [];
   lines.push(...buildCsvMetadataBlock('Espro Expense & Cost of Goods Sold Report', data.meta));
 
-  // ── SECTION 1: COGS BY PRODUCT ──
-  lines.push('--- SECTION 1: COST OF GOODS SOLD (COGS) PER PRODUCT ---');
-  const cogsHeaders = [
-    'Product Name',
-    'Qty Sold',
-    'Ingredients COGS (PHP)',
-    'Supplies COGS (PHP)',
-    'Total Product COGS (PHP)',
-    'COGS Per Unit (PHP)',
-    'COGS % of Revenue',
-    'Costing Method',
-  ];
+  // ── SECTION 1: COST OF GOODS SOLD (PERIODIC INVENTORY FORMULA) ──
+  lines.push('--- SECTION 1: COST OF GOODS SOLD (PERIODIC INVENTORY) ---');
+  const cogsHeaders = ['Accounting Line Item', 'Amount (PHP)', '% of Goods Available'];
   lines.push(cogsHeaders.map(formatCsvCell).join(','));
 
-  let totalQty = 0;
-  let totalIngCogs = 0;
-  let totalSuppCogs = 0;
-  let totalProdCogs = 0;
+  const begInv = data.cogs.beginningInventory ?? 0;
+  const purchases = data.cogs.inventoryPurchases ?? 0;
+  const goodsAvail = data.cogs.totalGoodsAvailable ?? (begInv + purchases);
+  const endInv = data.cogs.endingInventory ?? 0;
+  const totalCogs = data.cogs.totalCogs;
 
-  for (const item of data.cogs.items) {
-    totalQty += item.qtySold;
-    totalIngCogs += item.ingredientsCogs;
-    totalSuppCogs += item.suppliesCogs;
-    totalProdCogs += item.totalCogs;
-
-    const row = [
-      item.name,
-      item.qtySold,
-      formatCsvNumber(item.ingredientsCogs),
-      formatCsvNumber(item.suppliesCogs),
-      formatCsvNumber(item.totalCogs),
-      formatCsvNumber(item.unitCogs),
-      formatPct(item.cogsPctOfRev),
-      item.isEstimated ? 'Fallback Standard Recipe' : 'Transaction Snapshot',
-    ];
-    lines.push(row.map(formatCsvCell).join(','));
-  }
-
-  lines.push(
-    [
-      'SUBTOTAL (MENU ITEMS)',
-      totalQty,
-      formatCsvNumber(totalIngCogs),
-      formatCsvNumber(totalSuppCogs),
-      formatCsvNumber(totalProdCogs),
-      '',
-      '',
-      '',
-    ]
-      .map(formatCsvCell)
-      .join(',')
-  );
-
-  lines.push(
-    ['ORDER-LEVEL PACKAGING COGS', '', '', '', formatCsvNumber(data.cogs.orderPackagingCogs), '', '', '']
-      .map(formatCsvCell)
-      .join(',')
-  );
-  lines.push(
-    ['REFUNDED WASTAGE COGS', '', '', '', formatCsvNumber(data.cogs.refundedCogsWastage), '', '', '']
-      .map(formatCsvCell)
-      .join(',')
-  );
-  lines.push(
-    ['GRAND TOTAL COGS', '', '', '', formatCsvNumber(data.cogs.totalCogs), '', '', '']
-      .map(formatCsvCell)
-      .join(',')
-  );
+  lines.push(['Beginning Inventory', formatCsvNumber(begInv), formatPct(goodsAvail > 0 ? (begInv / goodsAvail) * 100 : 0)].map(formatCsvCell).join(','));
+  lines.push(['Add: Inventory Purchases', formatCsvNumber(purchases), formatPct(goodsAvail > 0 ? (purchases / goodsAvail) * 100 : 0)].map(formatCsvCell).join(','));
+  lines.push(['Total Goods Available for Sale/Use', formatCsvNumber(goodsAvail), '100.00%'].map(formatCsvCell).join(','));
+  lines.push(['Less: Ending Inventory', formatCsvNumber(-endInv), formatPct(goodsAvail > 0 ? (-endInv / goodsAvail) * 100 : 0)].map(formatCsvCell).join(','));
+  lines.push(['Total Cost of Goods Sold', formatCsvNumber(totalCogs), formatPct(goodsAvail > 0 ? (totalCogs / goodsAvail) * 100 : 0)].map(formatCsvCell).join(','));
 
   lines.push(''); // Blank spacer
 
@@ -792,31 +744,16 @@ export function buildProfitCsv(data: FullReportData): string {
 
   const rows: Array<[string, number, number]> = [
     ['Gross Sales', s.grossSales, (s.grossSales / net) * 100],
-    ['Less: Discounts & Promos', -s.totalDiscounts, (-s.totalDiscounts / net) * 100],
-    ['NET SALES', s.netSales, 100.0],
-    ['Cost of Goods Sold (COGS):', 0, 0],
-    ['  Menu Items Product Ingredients', -data.cogs.items.reduce((a, b) => a + b.ingredientsCogs, 0), 0],
-    ['  Menu Items Product Supplies', -data.cogs.items.reduce((a, b) => a + b.suppliesCogs, 0), 0],
-    ['  Order Takeout Packaging', -data.cogs.orderPackagingCogs, (-data.cogs.orderPackagingCogs / net) * 100],
-    ['  Refunded Inventory Wastage', -data.cogs.refundedCogsWastage, (-data.cogs.refundedCogsWastage / net) * 100],
-    ['TOTAL COGS', -s.totalCogs, (-s.totalCogs / net) * 100],
-    ['GROSS PROFIT', s.grossProfit, s.grossMarginPct],
-    ['Operating Expenses (OpEx):', 0, 0],
+    ['Less: Discounts', -s.totalDiscounts, (-s.totalDiscounts / net) * 100],
+    ['Net Sales', s.netSales, 100.0],
+    ['Less: Total Cost of Goods Sold', -s.totalCogs, (-s.totalCogs / net) * 100],
+    ['Gross Profit', s.grossProfit, s.grossMarginPct],
+    ['Less: Operating Expenses', -s.totalOperatingExpenses, (-s.totalOperatingExpenses / net) * 100],
+    [s.netProfit >= 0 ? 'Net Profit' : 'Net Loss', s.netProfit, s.netMarginPct],
   ];
 
-  for (const cat of data.expenses.byCategory) {
-    rows.push([`  ${cat.category}`, -cat.amount, (-cat.amount / net) * 100]);
-  }
-
-  rows.push(['TOTAL OPERATING EXPENSES', -s.totalOperatingExpenses, (-s.totalOperatingExpenses / net) * 100]);
-  rows.push(['NET PROFIT / (LOSS)', s.netProfit, s.netMarginPct]);
-
   for (const [label, amt, pct] of rows) {
-    if (label.endsWith(':')) {
-      lines.push([label, '', ''].map(formatCsvCell).join(','));
-    } else {
-      lines.push([label, formatCsvNumber(amt), formatPct(pct)].map(formatCsvCell).join(','));
-    }
+    lines.push([label, formatCsvNumber(amt), formatPct(pct)].map(formatCsvCell).join(','));
   }
 
   lines.push('');
@@ -1132,40 +1069,19 @@ function renderProfitLossSection(doc: jsPDF, data: FullReportData, startY: numbe
 
   const bodyData: any[] = [
     ['Gross Sales', formatAccountingNumber(s.grossSales), formatPct((s.grossSales / net) * 100)],
-    ['Less: Customer Discounts & Promos', formatAccountingNumber(s.totalDiscounts, true), formatPct((-s.totalDiscounts / net) * 100)],
-    [{ content: 'NET SALES', styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } },
+    ['Less: Discounts', formatAccountingNumber(s.totalDiscounts, true), formatPct((-s.totalDiscounts / net) * 100)],
+    [{ content: 'Net Sales', styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } },
      { content: formatAccountingNumber(s.netSales), styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } },
      { content: '100.00%', styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } }],
-    [{ content: 'Cost of Goods Sold (COGS)', colSpan: 3, styles: { fontStyle: 'bold', textColor: BRAND_COLORS.primary } }],
-    ['  Menu Items Raw Ingredients', formatAccountingNumber(data.cogs.items.reduce((a, b) => a + b.ingredientsCogs, 0), true), formatPct((-data.cogs.items.reduce((a, b) => a + b.ingredientsCogs, 0) / net) * 100)],
-    ['  Menu Items Packaging & Supplies', formatAccountingNumber(data.cogs.items.reduce((a, b) => a + b.suppliesCogs, 0), true), formatPct((-data.cogs.items.reduce((a, b) => a + b.suppliesCogs, 0) / net) * 100)],
-    ['  Order-Level Takeout Packaging', formatAccountingNumber(data.cogs.orderPackagingCogs, true), formatPct((-data.cogs.orderPackagingCogs / net) * 100)],
-    ['  Refunded Orders Inventory Wastage', formatAccountingNumber(data.cogs.refundedCogsWastage, true), formatPct((-data.cogs.refundedCogsWastage / net) * 100)],
-    [{ content: 'TOTAL COST OF GOODS SOLD', styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } },
-     { content: formatAccountingNumber(s.totalCogs, true), styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } },
-     { content: formatPct((-s.totalCogs / net) * 100), styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } }],
-    [{ content: 'GROSS PROFIT', styles: { fontStyle: 'bold', textColor: s.grossProfit >= 0 ? BRAND_COLORS.success : BRAND_COLORS.danger } },
-     { content: formatAccountingNumber(s.grossProfit), styles: { fontStyle: 'bold', textColor: s.grossProfit >= 0 ? BRAND_COLORS.success : BRAND_COLORS.danger } },
-     { content: formatPct(s.grossMarginPct), styles: { fontStyle: 'bold', textColor: s.grossProfit >= 0 ? BRAND_COLORS.success : BRAND_COLORS.danger } }],
-    [{ content: 'Operating Expenses (OpEx)', colSpan: 3, styles: { fontStyle: 'bold', textColor: BRAND_COLORS.primary } }],
-  ];
-
-  for (const cat of data.expenses.byCategory) {
-    bodyData.push([
-      `  ${cat.category}`,
-      formatAccountingNumber(cat.amount, true),
-      formatPct((-cat.amount / net) * 100),
-    ]);
-  }
-
-  bodyData.push(
-    [{ content: 'TOTAL OPERATING EXPENSES', styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } },
-     { content: formatAccountingNumber(s.totalOperatingExpenses, true), styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } },
-     { content: formatPct((-s.totalOperatingExpenses / net) * 100), styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } }],
-    [{ content: 'NET PROFIT / (LOSS)', styles: { fontStyle: 'bold', textColor: s.netProfit >= 0 ? BRAND_COLORS.success : BRAND_COLORS.danger, fontSize: 8.5 } },
+    ['Less: Total Cost of Goods Sold', formatAccountingNumber(s.totalCogs, true), formatPct((-s.totalCogs / net) * 100)],
+    [{ content: 'Gross Profit', styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } },
+     { content: formatAccountingNumber(s.grossProfit), styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } },
+     { content: formatPct(s.grossMarginPct), styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } }],
+    ['Less: Operating Expenses', formatAccountingNumber(s.totalOperatingExpenses, true), formatPct((-s.totalOperatingExpenses / net) * 100)],
+    [{ content: s.netProfit >= 0 ? 'Net Profit' : 'Net Loss', styles: { fontStyle: 'bold', textColor: s.netProfit >= 0 ? BRAND_COLORS.success : BRAND_COLORS.danger, fontSize: 8.5 } },
      { content: formatAccountingNumber(s.netProfit), styles: { fontStyle: 'bold', textColor: s.netProfit >= 0 ? BRAND_COLORS.success : BRAND_COLORS.danger, fontSize: 8.5 } },
      { content: formatPct(s.netMarginPct), styles: { fontStyle: 'bold', textColor: s.netProfit >= 0 ? BRAND_COLORS.success : BRAND_COLORS.danger, fontSize: 8.5 } }]
-  );
+  ];
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const contentWidth = pageWidth - 28;
@@ -1730,7 +1646,47 @@ export function exportTabPdf(
       }
       renderSalesLedgerSection(doc, data, y);
     } else if (tab === 'expenses') {
-      renderExpensesSection(doc, data, y);
+      const begInv = data.cogs.beginningInventory ?? 0;
+      const purchases = data.cogs.inventoryPurchases ?? 0;
+      const goodsAvail = data.cogs.totalGoodsAvailable ?? (begInv + purchases);
+      const endInv = data.cogs.endingInventory ?? 0;
+      const totalCogs = data.cogs.totalCogs;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(...BRAND_COLORS.dark);
+      doc.text('SECTION 1: COST OF GOODS SOLD (PERIODIC INVENTORY)', 14, y);
+
+      const periodicRows = [
+        ['Beginning Inventory', formatAccountingNumber(begInv), formatPct(goodsAvail > 0 ? (begInv / goodsAvail) * 100 : 0)],
+        ['Add: Inventory Purchases', formatAccountingNumber(purchases), formatPct(goodsAvail > 0 ? (purchases / goodsAvail) * 100 : 0)],
+        [
+          { content: 'Total Goods Available for Sale/Use', styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } } as any,
+          { content: formatAccountingNumber(goodsAvail), styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } } as any,
+          { content: '100.00%', styles: { fontStyle: 'bold', fillColor: BRAND_COLORS.surface } } as any,
+        ],
+        ['Less: Ending Inventory', formatAccountingNumber(endInv, true), formatPct(goodsAvail > 0 ? (-endInv / goodsAvail) * 100 : 0)],
+        [
+          { content: 'Total Cost of Goods Sold', styles: { fontStyle: 'bold', textColor: BRAND_COLORS.success } } as any,
+          { content: formatAccountingNumber(totalCogs), styles: { fontStyle: 'bold', textColor: BRAND_COLORS.success } } as any,
+          { content: formatPct(goodsAvail > 0 ? (totalCogs / goodsAvail) * 100 : 0), styles: { fontStyle: 'bold', textColor: BRAND_COLORS.success } } as any,
+        ],
+      ];
+
+      runAutoTable(doc, {
+        ...getStandardTableOptions(),
+        startY: y + 3,
+        head: [['Accounting Line Item', 'Amount (PHP)', '% of Goods Available']],
+        body: periodicRows,
+        columnStyles: {
+          0: { cellWidth: 139, halign: 'left' },
+          1: { cellWidth: 70, halign: 'right' },
+          2: { cellWidth: 60, halign: 'right' },
+        },
+      });
+
+      const nextY = (doc as any).lastAutoTable?.finalY + 8;
+      renderExpensesSection(doc, data, nextY);
     } else if (tab === 'profit') {
       renderProfitLossSection(doc, data, y);
     }

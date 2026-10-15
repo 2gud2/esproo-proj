@@ -37,13 +37,11 @@ import {
   buildSalesLineItemsCsv,
   buildExpensesCsv,
   buildProfitCsv,
-  buildInventoryCsv,
   downloadCsv,
   exportTabPdf,
   exportFullReportPdf,
   getPeriodFilenameSlug,
   buildPeriodCoveredString,
-  formatAccountingNumber,
 } from '../lib/reportExport';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -595,6 +593,33 @@ export default function ReportsPage() {
   }, [ingredients, batches]);
 
   // ════════════════════════════════════════════════════════════
+  // 5b. PERIODIC INVENTORY COGS FORMULA (ACCOUNTING STANDARD)
+  // ════════════════════════════════════════════════════════════
+  const endingInventory = inventoryValuationData.totalValue;
+
+  const inventoryPurchases = useMemo(() => {
+    return batches
+      .filter((b) => {
+        if (!b.received_at) return false;
+        const d = b.received_at;
+        const matchFrom = !dateFrom || d >= dateFrom;
+        const matchTo = !dateTo || d <= dateTo;
+        return matchFrom && matchTo;
+      })
+      .reduce((sum, b) => sum + Number(b.quantity_received || 0) * Number(b.cost_per_unit || 0), 0);
+  }, [batches, dateFrom, dateTo]);
+
+  const beginningInventory = useMemo(() => {
+    // In periodic inventory: Beginning Inventory + Purchases - Ending Inventory = Total COGS
+    // Therefore: Beginning Inventory = Total COGS + Ending Inventory - Purchases
+    return Math.max(0, totalCogs + endingInventory - inventoryPurchases);
+  }, [totalCogs, endingInventory, inventoryPurchases]);
+
+  const totalGoodsAvailable = useMemo(() => {
+    return beginningInventory + inventoryPurchases;
+  }, [beginningInventory, inventoryPurchases]);
+
+  // ════════════════════════════════════════════════════════════
   // 6. SALES BREAKDOWNS (Payment, Order Type, Cashier, Menu Mix)
   // ════════════════════════════════════════════════════════════
   const salesBreakdownData = useMemo(() => {
@@ -914,6 +939,10 @@ export default function ReportsPage() {
         refundedCogsWastage,
         totalCogs,
         estimatedLinesCount,
+        beginningInventory,
+        inventoryPurchases,
+        totalGoodsAvailable,
+        endingInventory,
       },
       expenses: {
         ledger: filteredExpenses,
@@ -952,6 +981,10 @@ export default function ReportsPage() {
     operatingExpensesByCategory,
     periodComparison,
     inventoryValuationData,
+    beginningInventory,
+    inventoryPurchases,
+    totalGoodsAvailable,
+    endingInventory,
   ]);
 
   // ════════════════════════════════════════════════════════════
@@ -1381,7 +1414,7 @@ export default function ReportsPage() {
                         maximumFractionDigits: 2,
                       })}
                     </span>
-                    <span className="badge badge-success">
+                    <span className="badge badge-danger">
                       Discounts: -₱
                       {totalDiscounts.toLocaleString('en-PH', {
                         minimumFractionDigits: 2,
@@ -1602,177 +1635,90 @@ export default function ReportsPage() {
                ════════════════════════════════════════════════════════════ */}
             {tab === 'expenses' && (
               <div className="expense-sections-grid">
-                {/* SECTION 1: COST OF GOODS SOLD (COGS) */}
+                {/* SECTION 1: COST OF GOODS SOLD (PERIODIC INVENTORY) */}
                 <div className="card">
                   <div className="report-section-header">
                     <h3 className="report-section-title">
                       <UtensilsCrossed size={16} color="var(--primary)" />
                       SECTION 1: COST OF GOODS SOLD (COGS)
                     </h3>
+                    <span className="badge badge-neutral" style={{ fontSize: '0.78rem' }}>
+                      Periodic Inventory Formula
+                    </span>
                   </div>
-                  {cogsBreakdown.length === 0 &&
-                  orderPackagingCogs === 0 &&
-                  refundedCogsWastage === 0 ? (
-                    <div className="empty-state" style={{ padding: '40px 20px' }}>
-                      <p style={{ fontSize: '0.85rem' }}>No recipe items sold in selected period.</p>
-                    </div>
-                  ) : (
-                    <div className="table-wrap">
-                      <table className="table">
-                        <thead>
-                          <tr>
-                            <th>Product</th>
-                            <th style={{ textAlign: 'center' }}>Quantity Sold</th>
-                            <th style={{ textAlign: 'right' }}>Ingredients</th>
-                            <th style={{ textAlign: 'right' }}>Packaging &amp; Supplies</th>
-                            <th style={{ textAlign: 'right' }}>Total COGS</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {cogsBreakdown.map((item) => (
-                            <tr key={item.id}>
-                              <td style={{ fontWeight: 600 }}>{item.name}</td>
-                              <td style={{ textAlign: 'center' }}>{item.qtySold}</td>
-                              <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
-                                ₱
-                                {item.ingredientsCogs.toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </td>
-                              <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
-                                ₱
-                                {item.suppliesCogs.toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </td>
-                              <td
-                                style={{
-                                  textAlign: 'right',
-                                  fontWeight: 600,
-                                  color: 'var(--danger)',
-                                }}
-                              >
-                                ₱
-                                {item.totalCogs.toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </td>
-                            </tr>
-                          ))}
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Accounting Line Item</th>
+                          <th style={{ textAlign: 'right' }}>Amount (₱)</th>
+                          <th style={{ textAlign: 'right' }}>% of Goods Available</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {/* Beginning Inventory (Value in Black) */}
+                        <tr>
+                          <td style={{ fontWeight: 600 }}>Beginning Inventory</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            ₱{beginningInventory.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>
+                            {totalGoodsAvailable > 0 ? `${((beginningInventory / totalGoodsAvailable) * 100).toFixed(2)}%` : '0.00%'}
+                          </td>
+                        </tr>
 
-                          {/* Line items subtotal */}
-                          <tr
-                            style={{
-                              background: 'var(--surface-2)',
-                              fontWeight: 600,
-                              borderTop: '1px solid var(--border)',
-                            }}
-                          >
-                            <td style={{ fontWeight: 700 }}>Line items subtotal</td>
-                            <td style={{ textAlign: 'center' }}>
-                              {cogsBreakdown.reduce((sum, i) => sum + i.qtySold, 0)}
-                            </td>
-                            <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                              ₱
-                              {totalLineIngredientsCogs.toLocaleString('en-PH', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </td>
-                            <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                              ₱
-                              {totalLineSuppliesCogs.toLocaleString('en-PH', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </td>
-                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
-                              ₱
-                              {totalLineCogs.toLocaleString('en-PH', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </td>
-                          </tr>
+                        {/* Add: Inventory Purchases (Value in Black) */}
+                        <tr>
+                          <td style={{ fontWeight: 600, paddingLeft: 16 }}>
+                            Add: Inventory Purchases
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            ₱{inventoryPurchases.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>
+                            {totalGoodsAvailable > 0 ? `${((inventoryPurchases / totalGoodsAvailable) * 100).toFixed(2)}%` : '0.00%'}
+                          </td>
+                        </tr>
 
-                          {/* Order packaging (takeout) */}
-                          <tr>
-                            <td style={{ fontWeight: 600 }}>Order packaging (takeout)</td>
-                            <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>—</td>
-                            <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>—</td>
-                            <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
-                              ₱
-                              {orderPackagingCogs.toLocaleString('en-PH', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </td>
-                            <td
-                              style={{
-                                textAlign: 'right',
-                                fontWeight: 600,
-                                color: 'var(--danger)',
-                              }}
-                            >
-                              ₱
-                              {orderPackagingCogs.toLocaleString('en-PH', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </td>
-                          </tr>
+                        {/* Total Goods Available for Sale/Use (Subtotal -> Black) */}
+                        <tr style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border)' }}>
+                          <td style={{ fontWeight: 700 }}>Total Goods Available for Sale/Use</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            ₱{totalGoodsAvailable.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            100.00%
+                          </td>
+                        </tr>
 
-                          {/* Refunded orders (wastage) */}
-                          {refundedCogsWastage > 0 && (
-                            <tr>
-                              <td style={{ fontWeight: 600, color: 'var(--warning, #e67e22)' }}>
-                                Refunded orders (wastage)
-                              </td>
-                              <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>—</td>
-                              <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>—</td>
-                              <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>—</td>
-                              <td
-                                style={{
-                                  textAlign: 'right',
-                                  fontWeight: 600,
-                                  color: 'var(--danger)',
-                                }}
-                              >
-                                ₱
-                                {refundedCogsWastage.toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </td>
-                            </tr>
-                          )}
+                        {/* Less: Ending Inventory (Deduction -> Red with -) */}
+                        <tr>
+                          <td style={{ fontWeight: 600, paddingLeft: 16, color: 'var(--danger)' }}>
+                            Less: Ending Inventory
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                            -₱{endingInventory.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{ textAlign: 'right', color: 'var(--danger)' }}>
+                            {totalGoodsAvailable > 0 ? `(${((endingInventory / totalGoodsAvailable) * 100).toFixed(2)}%)` : '0.00%'}
+                          </td>
+                        </tr>
 
-                          {/* Total COGS */}
-                          <tr className="table-total-row">
-                            <td colSpan={4} style={{ fontWeight: 700 }}>
-                              Total COGS
-                            </td>
-                            <td
-                              style={{
-                                textAlign: 'right',
-                                fontWeight: 700,
-                                color: 'var(--danger)',
-                              }}
-                            >
-                              ₱
-                              {totalCogs.toLocaleString('en-PH', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                        {/* Total Cost of Goods Sold (Final Grand Total -> Green & Bold) */}
+                        <tr className="table-total-row" style={{ background: 'var(--surface-2)', borderTop: '2px solid var(--border)' }}>
+                          <td style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--success)' }}>
+                            Total Cost of Goods Sold
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 800, fontSize: '1rem', color: 'var(--success)' }}>
+                            ₱{totalCogs.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--success)' }}>
+                            {totalGoodsAvailable > 0 ? `${((totalCogs / totalGoodsAvailable) * 100).toFixed(2)}%` : '0.00%'}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 {/* SECTION 2: OPERATING EXPENSES */}
@@ -1866,143 +1812,102 @@ export default function ReportsPage() {
                 <table className="income-statement-table">
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'left', width: '55%' }}>DETAILS</th>
-                      <th style={{ textAlign: 'right', width: '25%' }}>AMOUNT</th>
-                      <th style={{ textAlign: 'right', width: '20%' }}>% OF NET SALES</th>
+                      <th style={{ textAlign: 'left', width: '50%' }}>DETAILS</th>
+                      <th style={{ textAlign: 'right', width: '25%' }}>AMOUNT (₱)</th>
+                      <th style={{ textAlign: 'right', width: '25%' }}>% OF NET SALES</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {/* GROSS SALES */}
+                    {/* 1. Gross Sales (Base positive value -> Black) */}
                     <tr>
-                      <td className="income-statement-row-label">GROSS SALES</td>
-                      <td className="income-statement-val val-positive">
-                        {formatAccountingNumber(grossSales, false, true)}
+                      <td className="income-statement-row-label">Gross Sales</td>
+                      <td className="income-statement-val" style={{ color: 'var(--text-primary)' }}>
+                        ₱{grossSales.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                      <td className="income-statement-pct">
+                      <td className="income-statement-pct" style={{ color: 'var(--text-primary)' }}>
                         {netSales > 0 ? `${((grossSales / netSales) * 100).toFixed(2)}%` : '0.00%'}
                       </td>
                     </tr>
 
-                    {/* LESS: DISCOUNT */}
+                    {/* 2. Less: Discounts (Deduction -> Red with - sign) */}
                     <tr>
-                      <td className="income-statement-row-label indent">LESS: DISCOUNT</td>
-                      <td className="income-statement-val val-negative">
-                        {formatAccountingNumber(totalDiscounts, true, false)}
+                      <td className="income-statement-row-label indent" style={{ color: 'var(--danger)' }}>
+                        Less: Discounts
+                      </td>
+                      <td className="income-statement-val" style={{ color: 'var(--danger)' }}>
+                        -₱{totalDiscounts.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className="income-statement-pct" style={{ color: 'var(--danger)' }}>
                         {netSales > 0 ? `(${((totalDiscounts / netSales) * 100).toFixed(2)}%)` : '0.00%'}
                       </td>
                     </tr>
 
-                    {/* NET SALES */}
+                    {/* 3. Net Sales (Subtotal: Gross Sales - Discounts -> Black, do NOT make subtotals green) */}
                     <tr className="income-statement-subtotal-row">
-                      <td className="income-statement-row-label">NET SALES</td>
-                      <td className="income-statement-val val-positive">
-                        {formatAccountingNumber(netSales, false, false)}
+                      <td className="income-statement-row-label" style={{ fontWeight: 800 }}>
+                        Net Sales
                       </td>
-                      <td className="income-statement-pct" style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                      <td className="income-statement-val" style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
+                        ₱{netSales.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="income-statement-pct" style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
                         100.00%
                       </td>
                     </tr>
 
-                    {/* LESS: COST OF GOODS SOLD */}
+                    {/* 4. Less: Total Cost of Goods Sold (Deduction -> Red with - sign) */}
                     <tr>
-                      <td className="income-statement-row-label indent">
-                        LESS: PRODUCT COGS (RECIPES &amp; SUPPLIES)
+                      <td className="income-statement-row-label indent" style={{ color: 'var(--danger)' }}>
+                        Less: Total Cost of Goods Sold
                       </td>
-                      <td className="income-statement-val val-negative">
-                        {formatAccountingNumber(totalLineCogs, true, false)}
+                      <td className="income-statement-val" style={{ color: 'var(--danger)' }}>
+                        -₱{totalCogs.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className="income-statement-pct" style={{ color: 'var(--danger)' }}>
-                        {netSales > 0 ? `(${((totalLineCogs / netSales) * 100).toFixed(2)}%)` : '0.00%'}
-                      </td>
-                    </tr>
-
-                    {/* ORDER PACKAGING */}
-                    {orderPackagingCogs > 0 && (
-                      <tr>
-                        <td className="income-statement-row-label indent" style={{ paddingLeft: 32 }}>
-                          Order Packaging (Takeout)
-                        </td>
-                        <td className="income-statement-val val-negative">
-                          {formatAccountingNumber(orderPackagingCogs, true, false)}
-                        </td>
-                        <td className="income-statement-pct" style={{ color: 'var(--danger)' }}>
-                          {netSales > 0 ? `(${((orderPackagingCogs / netSales) * 100).toFixed(2)}%)` : '0.00%'}
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* REFUNDED INVENTORY WASTAGE */}
-                    {refundedCogsWastage > 0 && (
-                      <tr>
-                        <td className="income-statement-row-label indent" style={{ paddingLeft: 32, color: 'var(--warning, #e67e22)' }}>
-                          Refunded Orders (Wastage COGS)
-                        </td>
-                        <td className="income-statement-val val-negative">
-                          {formatAccountingNumber(refundedCogsWastage, true, false)}
-                        </td>
-                        <td className="income-statement-pct" style={{ color: 'var(--danger)' }}>
-                          {netSales > 0 ? `(${((refundedCogsWastage / netSales) * 100).toFixed(2)}%)` : '0.00%'}
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* TOTAL COGS */}
-                    <tr style={{ background: 'var(--surface-2)' }}>
-                      <td className="income-statement-row-label indent" style={{ fontWeight: 700 }}>
-                        TOTAL COST OF GOODS SOLD
-                      </td>
-                      <td className="income-statement-val val-negative" style={{ fontWeight: 700 }}>
-                        {formatAccountingNumber(totalCogs, true, false)}
-                      </td>
-                      <td className="income-statement-pct" style={{ fontWeight: 700, color: 'var(--danger)' }}>
                         {netSales > 0 ? `(${cogsPct.toFixed(2)}%)` : '0.00%'}
                       </td>
                     </tr>
 
-                    {/* GROSS PROFIT */}
+                    {/* 5. Gross Profit (Subtotal: Net Sales - Total COGS -> Black, do NOT make subtotals green) */}
                     <tr className="income-statement-subtotal-row">
-                      <td className="income-statement-row-label">GROSS PROFIT</td>
-                      <td className="income-statement-val val-positive">
-                        {formatAccountingNumber(grossProfit, false, false)}
+                      <td className="income-statement-row-label" style={{ fontWeight: 800 }}>
+                        Gross Profit
                       </td>
-                      <td className="income-statement-pct" style={{ fontWeight: 700, color: grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                      <td className="income-statement-val" style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
+                        ₱{grossProfit.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="income-statement-pct" style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
                         {grossMarginPct.toFixed(2)}%
                       </td>
                     </tr>
 
-                    {/* LESS: OPERATING EXPENSES */}
+                    {/* 6. Less: Operating Expenses (Deduction -> Red with - sign) */}
                     <tr>
-                      <td className="income-statement-row-label indent">
-                        LESS: OPERATING EXPENSES
+                      <td className="income-statement-row-label indent" style={{ color: 'var(--danger)' }}>
+                        Less: Operating Expenses
                       </td>
-                      <td className="income-statement-val val-negative">
-                        {formatAccountingNumber(totalOperatingExpenses, true, false)}
+                      <td className="income-statement-val" style={{ color: 'var(--danger)' }}>
+                        -₱{totalOperatingExpenses.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className="income-statement-pct" style={{ color: 'var(--danger)' }}>
                         {netSales > 0 ? `(${opexPct.toFixed(2)}%)` : '0.00%'}
                       </td>
                     </tr>
 
-                    {/* FINAL ROW: NET PROFIT or NET LOSS */}
+                    {/* 7. Net Profit / Net Loss (Final bottom-line total: Gross Profit - Operating Expenses -> Green if positive, Red if loss) */}
                     <tr className="income-statement-final-row">
                       <td
                         className="income-statement-row-label"
-                        style={{ fontSize: '1.05rem', fontWeight: 800 }}
+                        style={{ fontSize: '1.05rem', fontWeight: 800, color: isNetProfitPositive ? 'var(--success)' : 'var(--danger)' }}
                       >
-                        {isNetProfitPositive ? 'NET PROFIT' : 'NET LOSS'}
+                        {isNetProfitPositive ? 'Net Profit' : 'Net Loss'}
                       </td>
                       <td
-                        className={`income-statement-val ${
-                          isNetProfitPositive ? 'val-positive' : 'val-negative'
-                        }`}
-                        style={{ fontSize: '1.15rem', fontWeight: 800 }}
+                        className="income-statement-val"
+                        style={{ fontSize: '1.15rem', fontWeight: 800, color: isNetProfitPositive ? 'var(--success)' : 'var(--danger)' }}
                       >
                         <span className={`double-underline ${isNetProfitPositive ? '' : 'loss'}`}>
-                          {isNetProfitPositive
-                            ? formatAccountingNumber(netProfit, false, true)
-                            : formatAccountingNumber(netProfit, true, true)}
+                          {isNetProfitPositive ? '' : '-'}₱{Math.abs(netProfit).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
                       <td

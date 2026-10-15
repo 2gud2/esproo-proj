@@ -9,7 +9,6 @@ import {
   Layers,
   Sparkles,
   Tag,
-  Share2,
 } from 'lucide-react';
 import ItemCombobox from '../Common/ItemCombobox';
 import type { Ingredient } from '../../lib/mockData';
@@ -438,6 +437,22 @@ export default function RecipeEditor({
                 );
               })}
             </tbody>
+            {rowIndices.length > 0 && (
+              <tfoot>
+                <tr style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border)' }}>
+                  <td colSpan={hasSizes ? 5 : 4} style={{ textAlign: 'right', fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-secondary)', padding: '8px 10px' }}>
+                    {title} Subtotal:
+                  </td>
+                  <td className="recipe-cost-cell" style={{ fontWeight: 800, padding: '8px 10px' }}>
+                    ₱{rowIndices.reduce((sum, { row }) => {
+                      const ing = ingredients.find(i => i.id === row.ingredient_id);
+                      return sum + calculateIngredientCost(Number(row.quantity_used) || 0, row.unit, ing);
+                    }, 0).toFixed(2)}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}

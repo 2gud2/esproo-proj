@@ -1506,6 +1506,127 @@
   color: var(--primary);
 }
 
+/* ─── Recipe Viewer Financial Breakdown Card ─── */
+.cogs-financial-breakdown-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.cogs-breakdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.cogs-breakdown-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+}
+
+.cogs-metric-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--surface);
+}
+
+.cogs-metric-tile {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cogs-metric-tile.highlight-profit {
+  border-color: rgba(46, 125, 50, 0.25);
+  background: rgba(46, 125, 50, 0.04);
+}
+
+.metric-tile-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.metric-tile-val {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.metric-tile-val.text-danger {
+  color: var(--danger);
+}
+
+.metric-tile-val.text-success {
+  color: var(--success);
+}
+
+.metric-tile-sub {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.metric-tile-sub.profit-badge {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.cogs-breakdown-table-wrap {
+  padding: 4px 14px 12px;
+}
+
+.cogs-breakdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.cogs-breakdown-table th {
+  padding: 8px 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.cogs-breakdown-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.cogs-breakdown-table tr.cogs-subtotal-row {
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.cogs-breakdown-table tr.cogs-total-row {
+  background: rgba(46, 125, 50, 0.05);
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+}
+
 .viewer-tables-container {
   display: flex;
   flex-direction: column;

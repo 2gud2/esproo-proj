@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Edit2, Trash2, X, ChefHat, Coffee, LayoutGrid, List as ListIcon,
   Eye, UtensilsCrossed, RotateCcw, AlertTriangle, PackageCheck, Layers,
-  Utensils, Package
+  Utensils, Package, BarChart3
 } from 'lucide-react';
 import Sidebar from '../components/Layout/Sidebar';
 import TopBar from '../components/Layout/TopBar';
@@ -666,11 +666,15 @@ export default function MenuPage() {
 
     const grossProfit = baseSellingPrice - totalCogs;
     const margin = baseSellingPrice > 0 ? (grossProfit / baseSellingPrice) * 100 : 0;
+    const rawCost = rawList.reduce((s, e) => s + e.cost, 0);
+    const supplyCost = supplyList.reduce((s, e) => s + e.cost, 0);
 
     return {
       sellingPrice: baseSellingPrice,
       rawList,
       supplyList,
+      rawCost,
+      supplyCost,
       totalCogs,
       grossProfit,
       margin,
@@ -1389,28 +1393,108 @@ export default function MenuPage() {
                       </div>
                     </div>
 
-                {/* Metrics Summary Box */}
-                <div className="cogs-summary-card">
-                  <div className="cogs-stat">
-                    <span className="cogs-stat-label">Selling Price</span>
-                    <span className="cogs-stat-val">₱{viewerCalculation.sellingPrice.toFixed(2)}</span>
-                  </div>
-                  <div className="cogs-divider" />
-                  <div className="cogs-stat">
-                    <span className="cogs-stat-label">Total COGS / Serving</span>
-                    <span className="cogs-stat-val" style={{ color: 'var(--danger)' }}>
-                      ₱{viewerCalculation.totalCogs.toFixed(2)}
+                {/* Financial & COGS Breakdown Card */}
+                <div className="cogs-financial-breakdown-card">
+                  <div className="cogs-breakdown-header">
+                    <span className="cogs-breakdown-title">
+                      <BarChart3 size={15} color="var(--primary)" /> Item Financial &amp; COGS Breakdown
+                    </span>
+                    <span className="badge badge-neutral" style={{ fontSize: '0.72rem' }}>
+                      Per Serving ({viewerOrderType === 'takeout' ? 'Takeout' : 'Dine-in'})
                     </span>
                   </div>
-                  <div className="cogs-divider" />
-                  <div className="cogs-stat">
-                    <span className="cogs-stat-label">Gross Profit</span>
-                    <span className="cogs-stat-val" style={{ color: viewerCalculation.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                      ₱{viewerCalculation.grossProfit.toFixed(2)}
-                      <span style={{ fontSize: '0.72rem', display: 'block', fontWeight: 600 }}>
-                        ({viewerCalculation.margin.toFixed(1)}% margin)
+
+                  {/* Summary Metric Cards */}
+                  <div className="cogs-metric-strip">
+                    <div className="cogs-metric-tile">
+                      <span className="metric-tile-label">Selling Price</span>
+                      <span className="metric-tile-val">₱{viewerCalculation.sellingPrice.toFixed(2)}</span>
+                      <span className="metric-tile-sub">Base Unit Price</span>
+                    </div>
+                    <div className="cogs-metric-tile">
+                      <span className="metric-tile-label">Total COGS</span>
+                      <span className="metric-tile-val" style={{ color: 'var(--danger)' }}>
+                        ₱{viewerCalculation.totalCogs.toFixed(2)}
                       </span>
-                    </span>
+                      <span className="metric-tile-sub" style={{ color: 'var(--danger)' }}>
+                        {viewerCalculation.sellingPrice > 0 ? `${((viewerCalculation.totalCogs / viewerCalculation.sellingPrice) * 100).toFixed(1)}% of price` : '0%'}
+                      </span>
+                    </div>
+                    <div className="cogs-metric-tile highlight-profit">
+                      <span className="metric-tile-label">Gross Profit</span>
+                      <span className="metric-tile-val" style={{ color: viewerCalculation.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                        ₱{viewerCalculation.grossProfit.toFixed(2)}
+                      </span>
+                      <span className="metric-tile-sub" style={{ color: viewerCalculation.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }}>
+                        {viewerCalculation.margin.toFixed(1)}% margin
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Financial Statement Breakdown Table */}
+                  <div className="cogs-breakdown-table-wrap">
+                    <table className="cogs-breakdown-table">
+                      <thead>
+                        <tr>
+                          <th>Cost Element</th>
+                          <th style={{ textAlign: 'right' }}>Per Serving (₱)</th>
+                          <th style={{ textAlign: 'right' }}>% of Selling Price</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ fontWeight: 600 }}>Selling Price</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            ₱{viewerCalculation.sellingPrice.toFixed(2)}
+                          </td>
+                          <td style={{ textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600 }}>100.0%</td>
+                        </tr>
+                        <tr>
+                          <td style={{ paddingLeft: 18, color: 'var(--danger)' }}>
+                            Less: Recipe Ingredients Cost
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                            -₱{viewerCalculation.rawCost.toFixed(2)}
+                          </td>
+                          <td style={{ textAlign: 'right', color: 'var(--danger)' }}>
+                            {viewerCalculation.sellingPrice > 0 ? `(${((viewerCalculation.rawCost / viewerCalculation.sellingPrice) * 100).toFixed(1)}%)` : '0.0%'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style={{ paddingLeft: 18, color: 'var(--danger)' }}>
+                            Less: Packaging &amp; Supplies Cost
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                            -₱{viewerCalculation.supplyCost.toFixed(2)}
+                          </td>
+                          <td style={{ textAlign: 'right', color: 'var(--danger)' }}>
+                            {viewerCalculation.sellingPrice > 0 ? `(${((viewerCalculation.supplyCost / viewerCalculation.sellingPrice) * 100).toFixed(1)}%)` : '0.0%'}
+                          </td>
+                        </tr>
+                        <tr className="cogs-subtotal-row">
+                          <td style={{ fontWeight: 700, color: 'var(--danger)' }}>
+                            Total Cost of Goods Sold (COGS)
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
+                            -₱{viewerCalculation.totalCogs.toFixed(2)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
+                            {viewerCalculation.sellingPrice > 0 ? `(${((viewerCalculation.totalCogs / viewerCalculation.sellingPrice) * 100).toFixed(1)}%)` : '0.0%'}
+                          </td>
+                        </tr>
+                        <tr className="cogs-total-row">
+                          <td style={{ fontWeight: 800, color: viewerCalculation.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                            Gross Profit per Serving
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 800, color: viewerCalculation.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                            ₱{viewerCalculation.grossProfit.toFixed(2)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 800, color: viewerCalculation.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                            {viewerCalculation.margin.toFixed(1)}% margin
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 

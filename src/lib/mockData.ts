@@ -25,6 +25,7 @@ export interface Ingredient {
   low_stock_threshold: number;
   item_type?: 'ingredient' | 'supply';
   cost_per_unit?: number;
+  actual_purchase_price?: number;
   expiration_date?: string | null;
   auto_deduct_expired?: boolean;
   created_at?: string;

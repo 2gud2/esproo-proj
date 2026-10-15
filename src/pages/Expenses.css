@@ -15,6 +15,44 @@
   align-items: center;
 }
 
+.expenses-filter-toolbar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.expense-section-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.report-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.report-section-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+}
+
+.table-total-row td {
+  border-top: 2px solid var(--border);
+  padding: 12px 16px;
+}
+
 @media (max-width: 900px) {
   .expenses-layout { grid-template-columns: 1fr; }
   .expense-form-card { position: static; }

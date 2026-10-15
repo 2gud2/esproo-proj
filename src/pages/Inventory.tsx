@@ -76,6 +76,7 @@ const defaultForm = {
   stock_quantity: '' as number | string,
   low_stock_threshold: '10' as number | string,
   cost_per_unit: '' as number | string,
+  actual_purchase_price: '' as number | string,
   auto_deduct_expired: false,
 };
 
@@ -330,7 +331,8 @@ export default function InventoryPage() {
           0
         );
       } else {
-        stockValue = Number(ing.stock_quantity || 0) * Number(ing.cost_per_unit || 0);
+        const itemCost = ing.actual_purchase_price ?? ing.cost_per_unit ?? 0;
+        stockValue = Number(ing.stock_quantity || 0) * Number(itemCost);
       }
 
       const activeExpDates = activeBatches
@@ -500,6 +502,7 @@ export default function InventoryPage() {
       stock_quantity: '',
       low_stock_threshold: '10',
       cost_per_unit: '',
+      actual_purchase_price: '',
       auto_deduct_expired: false,
     });
     setUnitSelect('g');
@@ -516,6 +519,7 @@ export default function InventoryPage() {
       stock_quantity: i.stock_quantity != null ? String(i.stock_quantity) : '',
       low_stock_threshold: i.low_stock_threshold != null ? String(i.low_stock_threshold) : '10',
       cost_per_unit: i.cost_per_unit != null ? String(i.cost_per_unit) : '',
+      actual_purchase_price: i.actual_purchase_price != null ? String(i.actual_purchase_price) : '',
       auto_deduct_expired: i.auto_deduct_expired ?? false,
     });
     const found = COFFEE_SHOP_UNITS.find(u => u.value === i.unit);
@@ -560,9 +564,11 @@ export default function InventoryPage() {
     
     const threshold = form.low_stock_threshold === '' ? 0 : Number(form.low_stock_threshold);
     const costPerUnit = form.cost_per_unit === '' ? 0 : Number(form.cost_per_unit);
+    const actualPurchasePrice = form.actual_purchase_price === '' ? costPerUnit : Number(form.actual_purchase_price);
 
     if (isNaN(threshold) || threshold < 0) { toast.error('Threshold cannot be negative'); return; }
     if (isNaN(costPerUnit) || costPerUnit < 0) { toast.error('Cost cannot be negative'); return; }
+    if (isNaN(actualPurchasePrice) || actualPurchasePrice < 0) { toast.error('Actual purchase price cannot be negative'); return; }
 
     try {
       const saved = await saveIngredient({
@@ -572,6 +578,7 @@ export default function InventoryPage() {
         item_type: form.item_type,
         low_stock_threshold: threshold,
         cost_per_unit: costPerUnit,
+        actual_purchase_price: actualPurchasePrice,
         auto_deduct_expired: form.auto_deduct_expired,
       });
 
@@ -580,7 +587,7 @@ export default function InventoryPage() {
         await restockIngredient({
           ingredient_id: saved.id,
           quantity: Number(form.stock_quantity),
-          cost_per_unit: costPerUnit,
+          cost_per_unit: actualPurchasePrice || costPerUnit,
           received_at: new Date().toISOString().split('T')[0],
           note: 'Initial Opening Balance',
         });
@@ -990,6 +997,7 @@ export default function InventoryPage() {
                       <th>Current Stock</th>
                       <th>Used</th>
                       <th>Remaining Stock</th>
+                      <th style={{ textAlign: 'right' }}>Actual Purchase Price</th>
                       <th>Threshold</th>
                       <th>Status</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
@@ -1101,6 +1109,12 @@ export default function InventoryPage() {
                               {Number.isInteger(i.stock_quantity) ? i.stock_quantity : parseFloat(i.stock_quantity.toFixed(3))} {i.unit}
                             </td>
 
+                            {/* Actual Purchase Price */}
+                            <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', whiteSpace: 'nowrap' }}>
+                              ₱{Number(i.actual_purchase_price ?? i.cost_per_unit ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: 3 }}>/ {i.unit}</span>
+                            </td>
+
                             {/* Low-Stock Threshold */}
                             <td style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
                               {i.low_stock_threshold} {i.unit}
@@ -1158,7 +1172,7 @@ export default function InventoryPage() {
                           {/* Expandable Batch Breakdown Table */}
                           {isExpanded && (
                             <tr className="batch-breakdown-row">
-                              <td colSpan={9} style={{ padding: 0, borderBottom: '1px solid var(--border)' }}>
+                              <td colSpan={10} style={{ padding: 0, borderBottom: '1px solid var(--border)' }}>
                                 <motion.div
                                   className="batch-breakdown-panel"
                                   initial={{ opacity: 0, height: 0 }}
@@ -1748,6 +1762,25 @@ export default function InventoryPage() {
                     value={form.cost_per_unit}
                     onChange={e => f('cost_per_unit', e.target.value)}
                   />
+                </div>
+
+                {/* Actual Purchase Price (Bought Price) */}
+                <div className="form-group">
+                  <label className="form-label">
+                    Actual Purchase Price (Bought Price) (₱ / {unitSelect === 'Other' ? customUnit || 'unit' : unitSelect})
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    className="input"
+                    placeholder={form.cost_per_unit ? `e.g. ${form.cost_per_unit}` : 'e.g. 120.00'}
+                    value={form.actual_purchase_price}
+                    onChange={e => f('actual_purchase_price', e.target.value)}
+                  />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                    True acquisition cost for inventory valuation and exact profit tracking.
+                  </span>
                 </div>
 
                 {/* Auto Deduct Expired Checkbox */}

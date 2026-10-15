@@ -85,7 +85,7 @@ function getLocalBatches(ingredientId?: string): IngredientBatch[] {
         ingredient_id: i.id,
         quantity_received: Number(i.stock_quantity),
         quantity_remaining: Number(i.stock_quantity),
-        cost_per_unit: Number(i.cost_per_unit ?? 0),
+        cost_per_unit: Number(i.actual_purchase_price ?? i.cost_per_unit ?? 0),
         received_at: i.created_at ? i.created_at.split('T')[0] : today,
         expiration_date: i.expiration_date || null,
         supplier: 'Initial Inventory',
@@ -440,6 +440,7 @@ export async function loadIngredients(): Promise<Ingredient[]> {
           low_stock_threshold: Number(i.low_stock_threshold),
           item_type: (i.item_type as 'ingredient' | 'supply') || 'ingredient',
           cost_per_unit: i.cost_per_unit != null ? Number(i.cost_per_unit) : undefined,
+          actual_purchase_price: i.actual_purchase_price != null ? Number(i.actual_purchase_price) : (i.cost_per_unit != null ? Number(i.cost_per_unit) : undefined),
           expiration_date: i.expiration_date || null,
           auto_deduct_expired: i.auto_deduct_expired ?? false,
           created_at: i.created_at,
@@ -474,6 +475,9 @@ export async function saveIngredient(ingredient: Partial<Ingredient> & { name: s
   if (ingredient.cost_per_unit !== undefined) {
     payload.cost_per_unit = ingredient.cost_per_unit;
   }
+  if (ingredient.actual_purchase_price !== undefined) {
+    payload.actual_purchase_price = ingredient.actual_purchase_price;
+  }
 
   if (isSupabaseConfigured) {
     const { data, error } = await supabase
@@ -495,6 +499,7 @@ export async function saveIngredient(ingredient: Partial<Ingredient> & { name: s
         low_stock_threshold: Number(data.low_stock_threshold),
         item_type: (data.item_type as 'ingredient' | 'supply') || 'ingredient',
         cost_per_unit: data.cost_per_unit != null ? Number(data.cost_per_unit) : undefined,
+        actual_purchase_price: data.actual_purchase_price != null ? Number(data.actual_purchase_price) : (data.cost_per_unit != null ? Number(data.cost_per_unit) : undefined),
         expiration_date: data.expiration_date || null,
         auto_deduct_expired: data.auto_deduct_expired ?? false,
         created_at: data.created_at,
@@ -521,6 +526,7 @@ export async function saveIngredient(ingredient: Partial<Ingredient> & { name: s
     low_stock_threshold: ingredient.low_stock_threshold ?? 10,
     item_type: ingredient.item_type || 'ingredient',
     cost_per_unit: ingredient.cost_per_unit,
+    actual_purchase_price: ingredient.actual_purchase_price ?? ingredient.cost_per_unit,
     expiration_date: ingredient.expiration_date || null,
     auto_deduct_expired: ingredient.auto_deduct_expired ?? false,
     created_at: ingredient.created_at || now,
