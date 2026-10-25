@@ -1,0 +1,132 @@
+%% Espro POS: End-to-End Data Warehousing & ETL Pipeline Architecture
+%% Generated for Capstone Project - Based 100% on actual Espro POS codebase
+
+graph TD
+  %% STYLING AND CLASSES
+  classDef sourceLayer fill:#F3E9D7,stroke:#7A4A2B,stroke-width:2px,color:#2B1D16;
+  classDef etlLayer fill:#FFF8EE,stroke:#C08F5E,stroke-width:2px,color:#2B1D16;
+  classDef dwLayer fill:#EDE3D2,stroke:#7A4A2B,stroke-width:2px,color:#2B1D16;
+  classDef olapLayer fill:#EBF3ED,stroke:#2E7D32,stroke-width:2px,color:#1B5E20;
+  classDef alertBox fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#B71C1C;
+  classDef decisionDiamond fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#BF360C;
+
+  subgraph LAYER_1 ["LAYER 1: OPERATIONAL DATA SOURCES (OLTP)"]
+    direction TB
+    S1["POS Transactions (sales table)<br/>• items JSONB, subtotal, discount, total<br/>• payment_method, cashier_name, order_type"]:::sourceLayer
+    S2["Inventory & Batches<br/>• ingredients (stock_quantity, unit, cost)<br/>• ingredient_batches (FEFO expiry, supplier)<br/>• stock_movements & sale_batch_allocations"]:::sourceLayer
+    S3["Menu & Recipe Master Data<br/>• menu_items & menu_item_sizes (multiplier)<br/>• menu_item_ingredients (usage_scope)<br/>• addons, addon_ingredients, order_supply_rules"]:::sourceLayer
+    S4["Expenses (expenses table)<br/>• amount, category, date, description"]:::sourceLayer
+    S5["HR & Attendance Kiosk<br/>• employees (code, hourly_rate, pin_code)<br/>• shift_templates & shift_schedules<br/>• attendance_records (clock_in/out, hours)"]:::sourceLayer
+    S6["Auth & Profiles<br/>• profiles (name, role: admin/employee)<br/>• Supabase Auth users"]:::sourceLayer
+    S7["Offline Browser Cache<br/>• localStorage fallback (espro_* keys)"]:::sourceLayer
+  end
+
+  subgraph LAYER_2 ["LAYER 2: ETL PROCESSING PIPELINE (db.ts, orderCalc.ts, unitConversion.ts)"]
+    direction TB
+    E1["EXTRACT PHASE (db.ts)<br/>• loadSales, loadIngredients, loadBatches<br/>• loadExpenses, fetchAttendanceRecords<br/>• Fallback to localStorage on network error"]:::etlLayer
+    STG["STAGING BUFFER<br/>• In-memory React State hooks<br/>• Synchronized localStorage client staging"]:::etlLayer
+    
+    subgraph TRANSFORM_STEPS ["TRANSFORMATION ENGINE (Pure Logic Modules)"]
+      direction TB
+      T1["1. Unit Conversion (unitConversion.ts)<br/>Normalize g/kg/ml/L/shots/pumps/pcs"]:::etlLayer
+      T2["2. Recipe Explosion (orderCalc.ts computeLine)<br/>Apply size multiplier, addon recipes, usage_scope"]:::etlLayer
+      T3["3. COGS Snapshot Calculation<br/>Ingredients COGS vs Packaging Supplies COGS"]:::etlLayer
+      T4["4. Order Packaging Rules (computeOrder)<br/>Evaluate takeout cup/lid/bag rules"]:::etlLayer
+      T5["5. Net Metric Calculation<br/>Net Sales = Subtotal (Gross) - Discount"]:::etlLayer
+      T6["6. Missing-Value Imputation<br/>Legacy sales recipe cost fallback, default dine_in"]:::etlLayer
+      T7["7. FEFO Batch Sorting & Expiry<br/>Sort earliest expiration first, expire_batches"]:::etlLayer
+      T8["8. Cart Line Deduplication<br/>Deterministic lineKey merging"]:::etlLayer
+      T9["9. Local Timezone Normalization (dateUtils.ts)<br/>Asia/Manila UTC+8 day boundaries"]:::etlLayer
+    end
+
+    QC{"QUALITY CHECK & INTEGRITY VALIDATION<br/>• Sufficient Stock? (shortages.length == 0)<br/>• Unit Compatibility Valid?<br/>• Qty > 0 and Discount <= Subtotal?<br/>• Time Clock PIN Valid?<br/>• Sale Status == 'completed' for Voids?"}:::decisionDiamond
+
+    ALERT["STOP & ALERT ROUTINE<br/>• Transaction Rolled Back (Atomic RPC Exception)<br/>• Toast Error Notification (react-hot-toast)<br/>• TopBar Low-Stock & Near-Expiry Badge Alert"]:::alertBox
+
+    LOAD["LOAD PHASE (Atomic PL/pgSQL RPCs)<br/>• complete_sale_with_deduction<br/>• void_sale_with_restoration<br/>• restock_ingredient & adjust_ingredient_stock"]:::etlLayer
+  end
+
+  subgraph LAYER_3 ["LAYER 3: DATA WAREHOUSE & STAR SCHEMA (Supabase PostgreSQL)"]
+    direction TB
+    subgraph DIMS ["DIMENSION TABLES"]
+      D1["Dim_Date (date_key, full_date, day, week, month, year)"]:::dwLayer
+      D2["Dim_Product (menu_items.id, name, category, price)"]:::dwLayer
+      D3["Dim_Size (menu_item_sizes.id, multiplier)"]:::dwLayer
+      D4["Dim_Addon (addons.id, name, price)"]:::dwLayer
+      D5["Dim_Ingredient_Supply (ingredients.id, unit, actual_cost)"]:::dwLayer
+      D6["Dim_Employee_Cashier (employees.id, code, name, role)"]:::dwLayer
+      D7["Dim_OrderType (dine_in / takeout)"]:::dwLayer
+      D8["Dim_PaymentMethod (cash / gcash)"]:::dwLayer
+      D9["Dim_ExpenseCategory (Utilities, Rent, Supplies...)"]:::dwLayer
+      D10["Dim_Batch_Supplier (ingredient_batches.id, supplier)"]:::dwLayer
+    end
+
+    subgraph FACTS ["FACT TABLES"]
+      F1["Fact_Sales (Grain: Line Item / Sale)<br/>Metrics: Qty, Gross, Discount, Net Sales, COGS, Profit"]:::dwLayer
+      F2["Fact_Inventory_Movement (stock_movements)<br/>Metrics: change_qty, type, reference_id"]:::dwLayer
+      F3["Fact_Expenses (expenses table)<br/>Metrics: expense amount, date"]:::dwLayer
+      F4["Fact_Attendance (attendance_records)<br/>Metrics: total_hours, regular_hours, overtime, late_mins"]:::dwLayer
+    end
+
+    subgraph MARTS ["LOCALIZED DATA MARTS"]
+      M1["Sales Mart (Daily/Weekly/Monthly Revenue, Ticket Size)"]:::dwLayer
+      M2["Inventory Mart (Stock Valuation, Spoilage, Turnover, FEFO)"]:::dwLayer
+      M3["Finance / Profit Mart (Gross Margin, COGS, OPEX, P&L Net Profit)"]:::dwLayer
+      M4["Workforce Mart (Labor Hours, Overtime Cost, Tardiness)"]:::dwLayer
+    end
+  end
+
+  subgraph LAYER_4 ["LAYER 4: OLAP ENGINE & STAKEHOLDER VIEWS"]
+    direction TB
+    OLAP["OLAP PROCESSING LOGIC (Reports.tsx useMemo & PostgREST)<br/>• Slice: Filter by Status, Order Type<br/>• Dice: Date Range + Category + Cashier<br/>• Roll-up: Hourly -> Daily -> Weekly -> Monthly<br/>• Drill-down: Total Sales -> Category -> Sale Receipt -> Line Deductions<br/>• Period Comparison: Today vs Yesterday, MTD vs Last Month"]:::olapLayer
+
+    V1["OWNER / ADMIN VIEW (App.tsx ProtectedRoute adminOnly)<br/>• Financial Reports, Real Net Profit & P&L<br/>• COGS margin breakdown & break-even analysis<br/>• Multi-format Export: PDF & CSV (reportExport.ts)"]:::olapLayer
+    V2["STORE MANAGER / INVENTORY VIEW<br/>• Stock Valuation, Low-Stock & Expiry Banners<br/>• FEFO Batches, Expenses & OPEX oversight<br/>• Staff Shift Scheduling & Attendance Oversight"]:::olapLayer
+    V3["CASHIER / STAFF VIEW<br/>• Rapid POS Counter Checkout & Receipt Printing<br/>• Real-time stock shortage prevention<br/>• Daily Sales KPI Cards & Time Clock Punch"]:::olapLayer
+  end
+
+  %% DATA FLOW CONNECTIONS
+  S1 -->|Raw Sale JSONB| E1
+  S2 -->|Raw Stock & Batches| E1
+  S3 -->|Recipes & Multipliers| E1
+  S4 -->|Operational Expenses| E1
+  S5 -->|Clock In/Out Punches| E1
+  S6 -->|User Credentials & Roles| E1
+  S7 -.->|Offline Sync Fallback| E1
+
+  E1 -->|Extracted Records| STG
+  STG -->|Raw Cart & State| T1
+  T1 --> T2 --> T3 --> T4 --> T5 --> T6 --> T7 --> T8 --> T9
+  T9 -->|Transformed Payload| QC
+
+  QC -->|Integrity Failure / Shortage| ALERT
+  ALERT -.->|Cancel & Notify| S1
+  ALERT -.->|Cancel & Notify| S7
+
+  QC -->|Integrity Valid (PASS)| LOAD
+  LOAD -->|Atomic Commit| F1
+  LOAD -->|Atomic Commit| F2
+  LOAD -->|Insert Expenses| F3
+  LOAD -->|Insert Attendance| F4
+
+  D1 -.-> F1
+  D2 -.-> F1
+  D3 -.-> F1
+  D4 -.-> F1
+  D5 -.-> F2
+  D6 -.-> F1
+  D6 -.-> F4
+  D7 -.-> F1
+  D8 -.-> F1
+  D9 -.-> F3
+  D10 -.-> F2
+
+  F1 --> M1
+  F2 --> M2
+  F1 & F2 & F3 --> M3
+  F4 --> M4
+
+  M1 & M2 & M3 & M4 --> OLAP
+  OLAP --> V1
+  OLAP --> V2
+  OLAP --> V3

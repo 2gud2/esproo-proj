@@ -1,0 +1,138 @@
+%% Espro POS: Multi-Dimensional Star Schema Architecture
+%% Centered on Fact_Sales with surrounding Dimensions and Satellite Facts
+
+erDiagram
+  FACT_SALES {
+    text sale_id PK "UUID or String"
+    date date_key FK "Date of transaction (local)"
+    uuid menu_item_id FK "References menu_items.id"
+    uuid size_id FK "References menu_item_sizes.id"
+    uuid employee_id FK "Cashier / Staff identifier"
+    text order_type "dine_in | takeout"
+    text payment_method "cash | gcash"
+    text status "completed | voided | refunded"
+    numeric quantity "Units sold"
+    numeric unit_price "Base price + addon charges"
+    numeric gross_amount "Subtotal before discount"
+    numeric discount_amount "Discount subtracted"
+    numeric net_amount "Gross Amount - Discounts"
+    numeric cogs_ingredients "Raw ingredient cost"
+    numeric cogs_supplies "Cup, lid, packaging cost"
+    numeric total_cogs "Ingredients + Supplies COGS"
+    numeric gross_profit "Net Amount - Total COGS"
+  }
+
+  DIM_DATE {
+    date date_key PK "YYYY-MM-DD"
+    int year "Calendar Year"
+    int month "1 to 12"
+    text month_name "January, February..."
+    int day "1 to 31"
+    text day_name "Monday, Tuesday..."
+    int week_number "1 to 52"
+    boolean is_weekend "True if Sat/Sun"
+  }
+
+  DIM_PRODUCT {
+    uuid menu_item_id PK "menu_items.id"
+    text name "Item Name (e.g. Caffe Latte)"
+    text category "Coffee, Beverages, Food..."
+    numeric base_price "Standard retail price"
+    boolean is_active "True if currently sold"
+  }
+
+  DIM_SIZE {
+    uuid size_id PK "menu_item_sizes.id"
+    uuid menu_item_id FK "Parent product"
+    text size_name "Small, Medium, Large"
+    numeric price_override "Size specific price"
+    numeric ingredient_multiplier "Recipe scaling (e.g. 1.25x)"
+  }
+
+  DIM_EMPLOYEE_CASHIER {
+    uuid employee_id PK "employees.id"
+    varchar employee_code "BAR-001, CSH-002"
+    varchar name "Staff Member Name"
+    varchar role "Store Manager, Barista, Cashier"
+    numeric hourly_rate "Base wage rate"
+    boolean has_system_access "Login permission"
+  }
+
+  DIM_ORDER_TYPE {
+    text order_type PK "dine_in | takeout"
+    text packaging_rule "Apply packaging supply rules if takeout"
+  }
+
+  DIM_PAYMENT_METHOD {
+    text payment_method PK "cash | gcash"
+    text reconciliation_type "Drawer Cash vs E-Wallet Reference"
+  }
+
+  FACT_INVENTORY_MOVEMENT {
+    uuid movement_id PK "stock_movements.id"
+    uuid ingredient_id FK "ingredients.id"
+    numeric change_qty "Quantity changed (+/-)"
+    text type "sale | void_restore | restock | spoilage"
+    text reason "Audit explanation"
+    text reference_id "Linked sale_id or batch_id"
+    timestamptz created_at "Timestamp"
+  }
+
+  DIM_INGREDIENT_SUPPLY {
+    uuid ingredient_id PK "ingredients.id"
+    text name "Ingredient / Item Name"
+    text unit "g, ml, pcs, shots, pumps"
+    text item_type "ingredient | supply"
+    numeric stock_quantity "Current on-hand stock"
+    numeric low_stock_threshold "Reorder warning level"
+    numeric cost_per_unit "Standard unit cost"
+    numeric actual_purchase_price "Invoice purchase price"
+  }
+
+  DIM_BATCH {
+    uuid batch_id PK "ingredient_batches.id"
+    uuid ingredient_id FK "ingredients.id"
+    numeric quantity_received "Initial stock"
+    numeric quantity_remaining "Current stock remaining"
+    date expiration_date "FEFO Expiry Date"
+    date received_at "Receiving Date"
+    text supplier "Vendor / Roastery"
+    text status "active | depleted | expired"
+  }
+
+  FACT_EXPENSES {
+    text expense_id PK "expenses.id"
+    date date_key FK "Expense date"
+    text category "Utilities, Rent, Supplies, Salaries"
+    numeric amount "Expense Amount in PHP"
+    text description "Description / Notes"
+  }
+
+  FACT_ATTENDANCE {
+    uuid attendance_id PK "attendance_records.id"
+    uuid employee_id FK "employees.id"
+    date date_key FK "Shift Date"
+    timestamptz clock_in "Punch In"
+    timestamptz clock_out "Punch Out"
+    numeric total_hours "Total worked hours"
+    numeric regular_hours "Regular shift hours"
+    numeric overtime_hours "Overtime hours"
+    int late_minutes "Tardiness minutes"
+    varchar status "present, late, half_day, absent"
+  }
+
+  %% RELATIONSHIPS
+  FACT_SALES }|--|| DIM_DATE : "transacted on"
+  FACT_SALES }|--|| DIM_PRODUCT : "ordered item"
+  FACT_SALES }|--o| DIM_SIZE : "selected size"
+  FACT_SALES }|--|| DIM_EMPLOYEE_CASHIER : "processed by"
+  FACT_SALES }|--|| DIM_ORDER_TYPE : "service mode"
+  FACT_SALES }|--|| DIM_PAYMENT_METHOD : "tendered via"
+
+  FACT_INVENTORY_MOVEMENT }|--|| DIM_INGREDIENT_SUPPLY : "alters stock of"
+  FACT_INVENTORY_MOVEMENT }|--o| DIM_BATCH : "drawn from batch"
+  DIM_BATCH }|--|| DIM_INGREDIENT_SUPPLY : "batch of"
+
+  FACT_EXPENSES }|--|| DIM_DATE : "incurred on"
+  FACT_ATTENDANCE }|--|| DIM_EMPLOYEE_CASHIER : "logged by"
+  FACT_ATTENDANCE }|--|| DIM_DATE : "shift date"

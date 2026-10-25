@@ -2024,7 +2024,40 @@ export async function refundSaleNoRestoration(
       p_sale_id: saleId,
       p_reason: reason,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      const isMissingRpc =
+        error.code === 'PGRST202' ||
+        error.code === '42883' ||
+        error.message?.includes('schema cache') ||
+        error.message?.includes('Could not find the function');
+
+      if (isMissingRpc) {
+        // Direct table update fallback if RPC function is not in Supabase schema cache
+        const { data: saleData, error: fetchErr } = await supabase
+          .from('sales')
+          .select('id, status')
+          .eq('id', saleId)
+          .single();
+
+        if (fetchErr) throw new Error(fetchErr.message);
+        if (!saleData) throw new Error(`Sale "${saleId}" not found`);
+        if (saleData.status !== 'completed') {
+          throw new Error(`Sale "${saleId}" is already ${saleData.status}`);
+        }
+
+        const { error: updateErr } = await supabase
+          .from('sales')
+          .update({
+            status: 'refunded',
+            void_reason: reason,
+          })
+          .eq('id', saleId);
+
+        if (updateErr) throw new Error(updateErr.message);
+      } else {
+        throw new Error(error.message);
+      }
+    }
     await loadSales();
     return;
   }
